@@ -52,8 +52,24 @@ export default function TramMap() {
   const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
   const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [secondsLeft, setSecondsLeft] = useState(30)
   const gtfsIndexRef = useRef<GtfsIndex | null>(null)
   const pollingInFlightRef = useRef(false)
+  const tickRef = useRef<(() => Promise<void>) | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  function resetTimers() {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+    setSecondsLeft(30)
+    countdownIntervalRef.current = setInterval(() => {
+      setSecondsLeft(s => Math.max(0, s - 1))
+    }, 1_000)
+    pollIntervalRef.current = setInterval(() => {
+      tickRef.current?.()
+    }, 30_000)
+  }
 
   useEffect(() => {
     async function load() {
@@ -248,15 +264,34 @@ export default function TramMap() {
       } finally {
         pollingInFlightRef.current = false
       }
+      resetTimers()
     }
 
+    tickRef.current = tick
     tick()
-    const id = setInterval(tick, 30_000)
-    return () => clearInterval(id)
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+    }
   }, [dataLoaded])
 
   return (
-    <div style={{ height: '100vh' }}>
+    <div style={{ height: '100vh', position: 'relative' }}>
+      {dataLoaded && (
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000 }}
+             className="flex items-center gap-2 bg-gray-800/90 text-white rounded px-2 py-1 text-sm shadow font-medium">
+          <span>{secondsLeft}s</span>
+          <button
+            onClick={() => tickRef.current?.()}
+            className="flex items-center justify-center hover:text-blue-300"
+            title="Force reload"
+            aria-label="Force reload"
+          >
+            ↻
+          </button>
+        </div>
+      )}
       <MapContainer center={GRENOBLE_CENTER} zoom={13} style={{ height: '100%' }}>
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
