@@ -3,10 +3,16 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, Polyline, TileLayer } from 'react-leaflet'
+import { MapContainer, Polyline, TileLayer, useMapEvents } from 'react-leaflet'
 import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
+import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
 import TramMarker from './TramMarker'
+
+function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
+  useMapEvents({ click: () => onMapClick() })
+  return null
+}
 
 // Fix Leaflet default marker icons broken by webpack
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -54,6 +60,9 @@ export default function TramMap() {
   const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
   const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
+  const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
+  const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
   const pollingInFlightRef = useRef(false)
   const tickRef = useRef<(() => Promise<void>) | null>(null)
@@ -99,6 +108,7 @@ export default function TramMap() {
         }
       }
       setLineShapes(result)
+      setTramRouteIds(new Set(routes.map(r => r.route_id)))
 
       const tripRouteMap = new Map<string, string>()
       for (const trip of trips) tripRouteMap.set(trip.trip_id, trip.route_id)
@@ -219,8 +229,17 @@ export default function TramMap() {
             pathOptions={{ color: `#${route.route_color}`, weight: 4 }}
           />
         ))}
+        <MapClickHandler onMapClick={() => {
+          if (stopClickedRef.current) { stopClickedRef.current = false; return }
+          setSelectedStop(null)
+        }} />
         {tramStops.map(({ stop, color }) => (
-          <StopMarker key={stop.stop_id} stop={stop} />
+          <StopMarker
+            key={stop.stop_id}
+            stop={stop}
+            color={color}
+            onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }) }}
+          />
         ))}
         {tramMarkers.map(m => (
           <TramMarker
@@ -236,6 +255,14 @@ export default function TramMap() {
           />
         ))}
       </MapContainer>
+      {selectedStop && (
+        <StopDeparturePanel
+          stop={selectedStop.stop}
+          color={selectedStop.color}
+          tramRouteIds={tramRouteIds}
+          onClose={() => setSelectedStop(null)}
+        />
+      )}
     </div>
   )
 }
