@@ -25,14 +25,34 @@ function download(url, dest) {
   });
 }
 
+function parseCSVLine(line) {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  values.push(current);
+  return values;
+}
+
 function parseCSV(text) {
   const lines = text.split('\n');
-  const headers = lines[0].replace(/\r$/, '').split(',');
+  const headers = parseCSVLine(lines[0].replace(/\r$/, ''));
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].replace(/\r$/, '');
     if (!line) continue;
-    const values = line.split(',');
+    const values = parseCSVLine(line);
     const row = {};
     for (let j = 0; j < headers.length; j++) {
       row[headers[j]] = values[j] ?? '';
