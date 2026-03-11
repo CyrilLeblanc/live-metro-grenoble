@@ -305,7 +305,7 @@ export default function TramMap() {
           />
         ))}
         {tramStops.map(({ stop, color }) => (
-          <StopMarker key={stop.stop_id} stop={stop} color={color} />
+          <StopMarker key={stop.stop_id} stop={stop} />
         ))}
         {tramMarkers.map(m => (
           <TramMarker
