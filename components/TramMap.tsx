@@ -29,6 +29,7 @@ interface TramMarkerData {
   eta: string
   isRealtime: boolean
   color: string
+  bearing: number
 }
 
 function formatEta(secs: number): string {
@@ -220,11 +221,13 @@ export default function TramMap() {
               })
               if (!pos) {
                 noPos++
-                console.debug(`[poll] no pos for ${tripId} at ${stopId}: now=${now.toFixed(0)} timeA=${timeA} timeB=${timeB} (in window: ${timeA <= now && now <= timeB})`)
               }
 
               if (pos) {
                 seenTrips.add(tripId)
+                const dLat = stopB.stop_lat - pos.lat
+                const dLon = stopB.stop_lon - pos.lng
+                const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI
                 results.push({
                   id: `${tripId}-${stopIdx}`,
                   position: [pos.lat, pos.lng],
@@ -234,6 +237,7 @@ export default function TramMap() {
                   eta: formatEta(timeB - now),
                   isRealtime: realtime,
                   color: route.route_color,
+                  bearing,
                 })
               }
             }
@@ -278,6 +282,7 @@ export default function TramMap() {
             eta={m.eta}
             isRealtime={m.isRealtime}
             color={m.color}
+            bearing={m.bearing}
           />
         ))}
       </MapContainer>
