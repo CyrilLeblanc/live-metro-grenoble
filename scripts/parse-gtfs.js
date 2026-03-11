@@ -92,6 +92,7 @@ async function main() {
       stop_name: r.stop_name,
       stop_lat: r.stop_lat,
       stop_lon: r.stop_lon,
+      parent_station: r.parent_station ?? '',
     }));
     writeJSON('stops.json', stops);
 

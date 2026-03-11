@@ -3,6 +3,7 @@ export interface Stop {
   stop_name: string;
   stop_lat: number;
   stop_lon: number;
+  parent_station: string;
 }
 
 export interface Route {
@@ -67,6 +68,7 @@ export async function loadStops(): Promise<Stop[]> {
     stop_name: s.stop_name,
     stop_lat: parseFloat(s.stop_lat),
     stop_lon: parseFloat(s.stop_lon),
+    parent_station: s.parent_station ?? '',
   }));
   return stopsCache;
 }
