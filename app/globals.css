@@ -43,3 +43,18 @@ body {
   opacity: 0.6;
   border-style: dashed;
 }
+
+/* Override Leaflet default popup chrome */
+.tram-popup .leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
+  overflow: hidden !important;
+  min-width: 180px !important;
+}
+
+.tram-popup .leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4 !important;
+}
+
