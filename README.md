@@ -1,6 +1,6 @@
-# Grenoble Tram Viewer
+# LiveMetro - Grenoble
 
-A real-time map of Grenoble's tram network.
+A live map of Grenoble's tram network.
 
 ## Overview
 
