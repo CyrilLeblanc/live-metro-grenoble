@@ -25,8 +25,16 @@ interface TramMarkerData {
   position: [number, number]
   line: string
   direction: string
+  nextStop: string
+  eta: string
   isRealtime: boolean
   color: string
+}
+
+function formatEta(secs: number): string {
+  if (secs <= 0) return 'arriving'
+  const mins = Math.round(secs / 60)
+  return mins < 1 ? '< 1 min' : `in ${mins} min`
 }
 
 interface GtfsIndex {
@@ -222,6 +230,8 @@ export default function TramMap() {
                   position: [pos.lat, pos.lng],
                   line: route.route_short_name,
                   direction: headsign,
+                  nextStop: stopB.stop_name,
+                  eta: formatEta(timeB - now),
                   isRealtime: realtime,
                   color: route.route_color,
                 })
@@ -264,6 +274,8 @@ export default function TramMap() {
             position={m.position}
             line={m.line}
             direction={m.direction}
+            nextStop={m.nextStop}
+            eta={m.eta}
             isRealtime={m.isRealtime}
             color={m.color}
           />

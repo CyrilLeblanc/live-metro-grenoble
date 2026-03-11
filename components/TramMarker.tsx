@@ -1,16 +1,18 @@
 'use client'
 import L from 'leaflet'
-import { Marker } from 'react-leaflet'
+import { Marker, Popup } from 'react-leaflet'
 
 interface Props {
   position: [number, number] | null
   line: string
   direction: string
+  nextStop: string
+  eta: string
   isRealtime: boolean
   color: string
 }
 
-export default function TramMarker({ position, line, isRealtime, color }: Props) {
+export default function TramMarker({ position, line, direction, nextStop, eta, isRealtime, color }: Props) {
   if (!position) return null
 
   const icon = L.divIcon({
@@ -20,5 +22,17 @@ export default function TramMarker({ position, line, isRealtime, color }: Props)
     iconAnchor: [12, 12],
   })
 
-  return <Marker position={position} icon={icon} />
+  return (
+    <Marker position={position} icon={icon}>
+      <Popup>
+        <strong>Line {line}</strong><br />
+        Direction: {direction}<br />
+        Next stop: {nextStop}<br />
+        ETA: {eta}<br />
+        <span style={{ color: isRealtime ? 'green' : 'grey' }}>
+          {isRealtime ? 'Live' : 'Theoretical'}
+        </span>
+      </Popup>
+    </Marker>
+  )
 }
