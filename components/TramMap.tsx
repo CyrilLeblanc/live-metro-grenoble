@@ -52,7 +52,7 @@ export default function TramMap() {
   const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
   const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
   const [dataLoaded, setDataLoaded] = useState(false)
-  const [secondsLeft, setSecondsLeft] = useState(30)
+  const [secondsLeft, setSecondsLeft] = useState(10)
   const gtfsIndexRef = useRef<GtfsIndex | null>(null)
   const pollingInFlightRef = useRef(false)
   const tickRef = useRef<(() => Promise<void>) | null>(null)
@@ -62,13 +62,13 @@ export default function TramMap() {
   function resetTimers() {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-    setSecondsLeft(30)
+    setSecondsLeft(10)
     countdownIntervalRef.current = setInterval(() => {
       setSecondsLeft(s => Math.max(0, s - 1))
     }, 1_000)
     pollIntervalRef.current = setInterval(() => {
       tickRef.current?.()
-    }, 30_000)
+    }, 10_000)
   }
 
   useEffect(() => {
