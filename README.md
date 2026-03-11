@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Grenoble Tram Viewer
 
-## Getting Started
+A real-time map of Grenoble's tram network.
 
-First, run the development server:
+## Overview
+
+Interactive Leaflet map showing live tram positions for lines A–E. Because Métropole de Grenoble discontinued its GTFS-RT feed, there is no GPS source available. Positions are **interpolated** between scheduled stops using departure/arrival times from the static GTFS timetable. When shape polylines are present, interpolation follows the actual track geometry; otherwise it falls back to linear (straight-line) interpolation.
+
+## Prerequisites
+
+- Node.js v24 (see `.nvmrc`; use [nvm](https://github.com/nvm-sh/nvm) if needed)
+- npm (bundled with Node)
+- Internet access (GTFS download + live API calls)
+
+## Installation
+
+```bash
+git clone <repo-url>
+cd metro-viewer
+npm install
+```
+
+## Step 1 — Generate static GTFS data (required before first run)
+
+> **The app will not work without this step.** `public/gtfs/` is git-ignored and must be generated locally.
+
+```bash
+npm run parse-gtfs
+# or: node scripts/parse-gtfs.js
+```
+
+This script:
+- Downloads the GTFS ZIP from `data.mobilites-m.fr/api/gtfs/SEM`
+- Extracts and filters tram routes (route_type 0)
+- Writes 5 JSON files to `public/gtfs/`
+
+Re-run this command whenever Métromobilité publishes an updated timetable.
+
+## Step 2 — Start the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Production build
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build
+npm start
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Updating GTFS data
 
-## Learn More
+Re-run `npm run parse-gtfs` whenever the timetable changes. The script overwrites the existing files in `public/gtfs/`.
 
-To learn more about Next.js, take a look at the following resources:
+## Known limitations
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Positions are estimates** — no raw GPS signal; positions are interpolated between scheduled stops
+- **GTFS-RT discontinued** — Métropole no longer publishes a real-time vehicle feed; most positions are theoretical
+- Markers show "Live" (green) when the API returns real-time departure data, "Theoretical" (grey) otherwise
+- Positions refresh every 30 seconds
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project structure
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/
+  page.tsx                   Entry point — renders TramMapLoader
+  layout.tsx                 Root layout + metadata
+  api/stoptimes/route.ts     Proxy for Métromobilité API (CORS bypass)
+components/
+  TramMap.tsx                Core map: loads GTFS, polls API, renders map
+  TramMapLoader.tsx          Dynamic import wrapper (ssr: false — Leaflet needs window)
+  TramMarker.tsx             Tram position marker with popup
+  StopMarker.tsx             Stop circle marker
+lib/
+  gtfs.ts                    Loads & caches public/gtfs/*.json
+  interpolator.ts            Time-based position interpolation along shape polylines
+  api.ts                     Client fetch wrapper for /api/stoptimes
+scripts/
+  parse-gtfs.js              Downloads GTFS and writes public/gtfs/ JSON files
+public/gtfs/                 Pre-parsed static data (git-ignored; must be generated)
+  routes.json                Tram line definitions
+  stops.json                 Stop locations
+  trips.json                 Trip → route/shape mapping
+  stop_times.json            Scheduled arrivals/departures (tram only)
+  shapes.json                Polyline geometry for each shape_id
+```
