@@ -1,0 +1,171 @@
+import { interpolatePosition } from '../../../lib/interpolator'
+import { loadRoutes, loadTrips, loadShapes, loadStops, loadStopTimes, Route, Stop, Trip, StopTime, ShapePoint } from '../../../lib/gtfs'
+
+interface GtfsIndex {
+  stopById: Map<string, Stop>
+  tripById: Map<string, Trip>
+  routeById: Map<string, Route>
+  stopTimesByTrip: Map<string, StopTime[]>
+  shapeByShapeId: Map<string, ShapePoint[]>
+  activeClusterIds: string[]
+}
+
+export interface TramPosition {
+  id: string
+  lat: number
+  lng: number
+  bearing: number
+  line: string
+  lineColor: string
+  direction: string
+  nextStop: string
+  eta: number
+  isRealtime: boolean
+}
+
+let gtfsIndex: GtfsIndex | null = null
+let lastGoodResponse: TramPosition[] | null = null
+
+async function buildGtfsIndex(): Promise<GtfsIndex> {
+  const [routes, trips, shapes, stops, stopTimes] = await Promise.all([
+    loadRoutes(), loadTrips(), loadShapes(), loadStops(), loadStopTimes()
+  ])
+
+  const stopById = new Map(stops.map(s => [s.stop_id, s]))
+  const tripById = new Map(trips.map(t => [t.trip_id, t]))
+  const routeById = new Map(routes.map(r => [r.route_id, r]))
+
+  const stopTimesByTrip = new Map<string, StopTime[]>()
+  for (const st of stopTimes) {
+    if (!stopTimesByTrip.has(st.trip_id)) stopTimesByTrip.set(st.trip_id, [])
+    stopTimesByTrip.get(st.trip_id)!.push(st)
+  }
+  for (const arr of stopTimesByTrip.values())
+    arr.sort((a, b) => a.stop_sequence - b.stop_sequence)
+
+  const shapeByShapeId = new Map<string, ShapePoint[]>()
+  for (const pt of shapes) {
+    if (!shapeByShapeId.has(pt.shape_id)) shapeByShapeId.set(pt.shape_id, [])
+    shapeByShapeId.get(pt.shape_id)!.push(pt)
+  }
+  for (const pts of shapeByShapeId.values())
+    pts.sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence)
+
+  const clusterIdSet = new Set<string>()
+  for (const st of stopTimes) {
+    const stop = stopById.get(st.stop_id)
+    if (!stop) continue
+    clusterIdSet.add(stop.parent_station || stop.stop_id)
+  }
+  const activeClusterIds = [...clusterIdSet]
+
+  return { stopById, tripById, routeById, stopTimesByTrip, shapeByShapeId, activeClusterIds }
+}
+
+export async function GET() {
+  if (!gtfsIndex) {
+    gtfsIndex = await buildGtfsIndex()
+  }
+  const index = gtfsIndex
+  const now = Date.now() / 1000
+  const results: TramPosition[] = []
+  const seenTrips = new Set<string>()
+
+  type UpstreamTime = {
+    stopId: string
+    tripId: string
+    realtimeDeparture: number
+    serviceDay: number
+    realtime: boolean
+  }
+  type UpstreamGroup = { pattern: { id: string; desc: string }; times: UpstreamTime[] }
+
+  const settled = await Promise.allSettled(
+    index.activeClusterIds.map(id =>
+      fetch(`https://data.mobilites-m.fr/api/routers/default/index/clusters/SEM:GEN${id}/stoptimes`, {
+        headers: { Origin: 'http://localhost:3000' },
+      })
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json() as Promise<UpstreamGroup[]>
+        })
+    )
+  )
+
+  for (const outcome of settled) {
+    if (outcome.status === 'rejected') continue
+    if (!Array.isArray(outcome.value)) continue
+
+    for (const group of outcome.value) {
+      const headsign = group.pattern.desc
+      for (const time of group.times) {
+        const { tripId: rawTripId, stopId: rawStopId, realtimeDeparture, serviceDay, realtime } = time
+        const tripId = rawTripId.includes(':') ? rawTripId.split(':').slice(1).join(':') : rawTripId
+        const stopId = rawStopId.includes(':') ? rawStopId.split(':').slice(1).join(':') : rawStopId
+
+        if (seenTrips.has(tripId)) continue
+
+        const trip = index.tripById.get(tripId)
+        if (!trip) continue
+        const route = index.routeById.get(trip.route_id)
+        if (!route) continue
+
+        const tripStops = index.stopTimesByTrip.get(tripId)
+        if (!tripStops) continue
+
+        const stopIdx = tripStops.findIndex(st => st.stop_id === stopId)
+        if (stopIdx <= 0) continue
+
+        const stA = tripStops[stopIdx - 1]
+        const stB = tripStops[stopIdx]
+
+        const stopA = index.stopById.get(stA.stop_id)
+        const stopB = index.stopById.get(stB.stop_id)
+        if (!stopA || !stopB) continue
+
+        const [h, m, s] = stA.departure_time.split(':').map(Number)
+        const timeA = serviceDay + h * 3600 + m * 60 + s
+        const timeB = serviceDay + realtimeDeparture
+
+        const shape = index.shapeByShapeId.get(trip.shape_id)
+
+        const pos = interpolatePosition({
+          currentTime: now,
+          stopA: { lat: stopA.stop_lat, lng: stopA.stop_lon, time: timeA },
+          stopB: { lat: stopB.stop_lat, lng: stopB.stop_lon, time: timeB },
+          shape: shape?.map(p => ({ lat: p.shape_pt_lat, lon: p.shape_pt_lon })),
+        })
+
+        if (pos) {
+          seenTrips.add(tripId)
+          const dLat = stopB.stop_lat - pos.lat
+          const dLon = stopB.stop_lon - pos.lng
+          const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI
+          results.push({
+            id: `${tripId}-${stopIdx}`,
+            lat: pos.lat,
+            lng: pos.lng,
+            bearing,
+            line: route.route_short_name,
+            lineColor: `#${route.route_color}`,
+            direction: headsign,
+            nextStop: stopB.stop_name,
+            eta: timeB - now,
+            isRealtime: realtime,
+          })
+        }
+      }
+    }
+  }
+
+  if (results.length > 0) {
+    lastGoodResponse = results
+    return Response.json(results)
+  }
+
+  if (lastGoodResponse) {
+    return Response.json(lastGoodResponse)
+  }
+
+  return Response.json([])
+}

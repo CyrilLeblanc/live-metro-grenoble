@@ -4,9 +4,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer } from 'react-leaflet'
-import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop, StopTime, Trip } from '../lib/gtfs'
-import { fetchStopTimes } from '../lib/api'
-import { interpolatePosition } from '../lib/interpolator'
+import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
 import StopMarker from './StopMarker'
 import TramMarker from './TramMarker'
 
@@ -38,13 +36,17 @@ function formatEta(secs: number): string {
   return mins < 1 ? '< 1 min' : `in ${mins} min`
 }
 
-interface GtfsIndex {
-  stopById: Map<string, Stop>
-  tripById: Map<string, Trip>
-  routeById: Map<string, Route>
-  stopTimesByTrip: Map<string, StopTime[]>
-  shapeByShapeId: Map<string, ShapePoint[]>
-  activeClusterIds: string[]
+interface TramApiItem {
+  id: string
+  lat: number
+  lng: number
+  bearing: number
+  line: string
+  lineColor: string
+  direction: string
+  nextStop: string
+  eta: number
+  isRealtime: boolean
 }
 
 export default function TramMap() {
@@ -53,7 +55,6 @@ export default function TramMap() {
   const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
   const [dataLoaded, setDataLoaded] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
-  const gtfsIndexRef = useRef<GtfsIndex | null>(null)
   const pollingInFlightRef = useRef(false)
   const tickRef = useRef<(() => Promise<void>) | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -149,21 +150,6 @@ export default function TramMap() {
       }
       setTramStops(tramClusters)
 
-      // Build index for polling
-      const tripById = new Map(trips.map(t => [t.trip_id, t]))
-      const routeById = new Map(routes.map(r => [r.route_id, r]))
-
-      const stopTimesByTrip = new Map<string, StopTime[]>()
-      for (const st of stopTimes) {
-        if (!stopTimesByTrip.has(st.trip_id)) stopTimesByTrip.set(st.trip_id, [])
-        stopTimesByTrip.get(st.trip_id)!.push(st)
-      }
-      for (const arr of stopTimesByTrip.values())
-        arr.sort((a, b) => a.stop_sequence - b.stop_sequence)
-
-      const activeClusterIds = [...clusterMap.keys()]
-
-      gtfsIndexRef.current = { stopById, tripById, routeById, stopTimesByTrip, shapeByShapeId: shapeMap, activeClusterIds }
       setDataLoaded(true)
     }
     load()
@@ -174,93 +160,22 @@ export default function TramMap() {
 
     async function tick() {
       if (pollingInFlightRef.current) return
-      const index = gtfsIndexRef.current
-      if (!index) return
-
       pollingInFlightRef.current = true
       try {
-        const now = Date.now() / 1000
-
-        const results: TramMarkerData[] = []
-        const seenTrips = new Set<string>()
-
-        const settled = await Promise.allSettled(
-          index.activeClusterIds.map(clusterId => fetchStopTimes(clusterId))
-        )
-
-        let totalTimes = 0, noTrip = 0, noStopIdx = 0, noPos = 0
-
-        for (let ci = 0; ci < settled.length; ci++) {
-          const outcome = settled[ci]
-          if (outcome.status === 'rejected') continue
-
-          for (const group of outcome.value) {
-            const headsign = group.pattern.desc
-            for (const time of group.times) {
-              const { tripId: rawTripId, stopId: rawStopId, realtimeDeparture, serviceDay, realtime } = time
-              // Strip agency prefix (e.g. "SEM:31869701" → "31869701")
-              const tripId = rawTripId.includes(':') ? rawTripId.split(':').slice(1).join(':') : rawTripId
-              const stopId = rawStopId.includes(':') ? rawStopId.split(':').slice(1).join(':') : rawStopId
-
-              if (seenTrips.has(tripId)) continue
-              totalTimes++
-
-              const trip = index.tripById.get(tripId)
-              if (!trip) { noTrip++; continue }
-              const route = index.routeById.get(trip.route_id)
-              if (!route) continue
-
-              const tripStops = index.stopTimesByTrip.get(tripId)
-              if (!tripStops) continue
-
-              const stopIdx = tripStops.findIndex(st => st.stop_id === stopId)
-              if (stopIdx <= 0) { noStopIdx++; continue }
-
-              const stA = tripStops[stopIdx - 1]
-              const stB = tripStops[stopIdx]
-
-              const stopA = index.stopById.get(stA.stop_id)
-              const stopB = index.stopById.get(stB.stop_id)
-              if (!stopA || !stopB) continue
-
-              const [h, m, s] = stA.departure_time.split(':').map(Number)
-              const timeA = serviceDay + h * 3600 + m * 60 + s
-              const timeB = serviceDay + realtimeDeparture
-
-              const shape = index.shapeByShapeId.get(trip.shape_id)
-
-              const pos = interpolatePosition({
-                currentTime: now,
-                stopA: { lat: stopA.stop_lat, lng: stopA.stop_lon, time: timeA },
-                stopB: { lat: stopB.stop_lat, lng: stopB.stop_lon, time: timeB },
-                shape: shape?.map(p => ({ lat: p.shape_pt_lat, lon: p.shape_pt_lon })),
-              })
-              if (!pos) {
-                noPos++
-              }
-
-              if (pos) {
-                seenTrips.add(tripId)
-                const dLat = stopB.stop_lat - pos.lat
-                const dLon = stopB.stop_lon - pos.lng
-                const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI
-                results.push({
-                  id: `${tripId}-${stopIdx}`,
-                  position: [pos.lat, pos.lng],
-                  line: route.route_short_name,
-                  direction: headsign,
-                  nextStop: stopB.stop_name,
-                  eta: formatEta(timeB - now),
-                  isRealtime: realtime,
-                  color: route.route_color,
-                  bearing,
-                })
-              }
-            }
-          }
-        }
-
-        setTramMarkers(results)
+        const res = await fetch('/api/trams')
+        if (!res.ok) return
+        const data: TramApiItem[] = await res.json()
+        setTramMarkers(data.map(item => ({
+          id: item.id,
+          position: [item.lat, item.lng] as [number, number],
+          line: item.line,
+          direction: item.direction,
+          nextStop: item.nextStop,
+          eta: formatEta(item.eta),
+          isRealtime: item.isRealtime,
+          color: item.lineColor.replace('#', ''),
+          bearing: item.bearing,
+        })))
       } finally {
         pollingInFlightRef.current = false
       }
