@@ -59,30 +59,34 @@ Re-run `npm run parse-gtfs` whenever the timetable changes. The script overwrite
 - **Positions are estimates** — no raw GPS signal; positions are interpolated between scheduled stops
 - **GTFS-RT discontinued** — Métropole no longer publishes a real-time vehicle feed; most positions are theoretical
 - Markers show "Live" (green) when the API returns real-time departure data, "Theoretical" (grey) otherwise
-- Positions refresh every 30 seconds
+- Positions refresh every 10 seconds; a countdown timer and manual refresh button are shown in the top-right corner
+- Tram markers are directional arrows (SVG) rotated by bearing; opacity is reduced for theoretical positions
+- Clicking a stop opens a side panel listing upcoming departures for that stop
 
 ## Project structure
 
 ```
 app/
-  page.tsx                   Entry point — renders TramMapLoader
-  layout.tsx                 Root layout + metadata
-  api/stoptimes/route.ts     Proxy for Métromobilité API (CORS bypass)
+  page.tsx                        Entry point — renders TramMapLoader
+  layout.tsx                      Root layout + metadata
+  api/stoptimes/route.ts          Proxy for Métromobilité API (CORS bypass)
+  api/trams/route.ts              Server-side tram position computation (GTFS index + interpolation)
 components/
-  TramMap.tsx                Core map: loads GTFS, polls API, renders map
-  TramMapLoader.tsx          Dynamic import wrapper (ssr: false — Leaflet needs window)
-  TramMarker.tsx             Tram position marker with popup
-  StopMarker.tsx             Stop circle marker
+  TramMap.tsx                     Core map: fetches tram positions, renders map
+  TramMapLoader.tsx               Dynamic import wrapper (ssr: false — Leaflet needs window)
+  TramMarker.tsx                  Directional SVG arrow marker with styled popup
+  StopMarker.tsx                  Stop circle marker (unified purple colour)
+  StopDeparturePanel.tsx          Side panel showing next departures for a selected stop
 lib/
-  gtfs.ts                    Loads & caches public/gtfs/*.json
-  interpolator.ts            Time-based position interpolation along shape polylines
-  api.ts                     Client fetch wrapper for /api/stoptimes
+  gtfs.ts                         Loads & caches public/gtfs/*.json
+  interpolator.ts                 Time-based position interpolation along shape polylines
+  api.ts                          Client fetch wrapper for /api/stoptimes
 scripts/
-  parse-gtfs.js              Downloads GTFS and writes public/gtfs/ JSON files
-public/gtfs/                 Pre-parsed static data (git-ignored; must be generated)
-  routes.json                Tram line definitions
-  stops.json                 Stop locations
-  trips.json                 Trip → route/shape mapping
-  stop_times.json            Scheduled arrivals/departures (tram only)
-  shapes.json                Polyline geometry for each shape_id
+  parse-gtfs.js                   Downloads GTFS and writes public/gtfs/ JSON files
+public/gtfs/                      Pre-parsed static data (git-ignored; must be generated)
+  routes.json                     Tram line definitions
+  stops.json                      Stop locations
+  trips.json                      Trip → route/shape mapping
+  stop_times.json                 Scheduled arrivals/departures (tram only)
+  shapes.json                     Polyline geometry for each shape_id
 ```
