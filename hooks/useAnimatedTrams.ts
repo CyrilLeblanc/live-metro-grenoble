@@ -1,4 +1,3 @@
-import L from 'leaflet'
 import React, { useEffect, useRef } from 'react'
 
 const DECEL_THRESHOLD = 20 // seconds before stop where deceleration begins
@@ -12,7 +11,14 @@ export interface TramApiItem {
   lat: number
   lng: number
   eta: number
+  bearing: number
   shapePath: LatLng[]
+}
+
+export interface TramPosition {
+  lat: number
+  lng: number
+  bearing: number
 }
 
 interface TramAnimState {
@@ -25,6 +31,7 @@ interface TramAnimState {
   updateTime: number      // performance.now() at last API update
   apiLat: number          // position at last API update (for speed computation)
   apiLng: number
+  bearing: number
 }
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -75,8 +82,9 @@ function positionAtProgress(path: LatLng[], lengths: number[], progress: number)
   return path[path.length - 1]
 }
 
-export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.RefObject<Map<string, L.Marker>>): void {
+export function useAnimatedTrams(apiTrams: TramApiItem[]): React.RefObject<Map<string, TramPosition>> {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
+  const positionsRef = useRef<Map<string, TramPosition>>(new Map())
   const lastApiTimeRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
   const lastFrameTimeRef = useRef<number | null>(null)
@@ -90,6 +98,11 @@ export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.R
     lastApiTimeRef.current = now
 
     for (const item of apiTrams) {
+      // Always write initial API position so trams without paths still appear
+      if (!positionsRef.current.has(item.id)) {
+        positionsRef.current.set(item.id, { lat: item.lat, lng: item.lng, bearing: item.bearing })
+      }
+
       if (!item.shapePath || item.shapePath.length < 2) continue
 
       const prev = animStateRef.current.get(item.id)
@@ -114,6 +127,7 @@ export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.R
         updateTime: now,
         apiLat: item.lat,
         apiLng: item.lng,
+        bearing: item.bearing,
       })
     }
 
@@ -121,6 +135,9 @@ export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.R
     const currentIds = new Set(apiTrams.map(t => t.id))
     for (const id of animStateRef.current.keys()) {
       if (!currentIds.has(id)) animStateRef.current.delete(id)
+    }
+    for (const id of positionsRef.current.keys()) {
+      if (!currentIds.has(id)) positionsRef.current.delete(id)
     }
   }, [apiTrams])
 
@@ -140,7 +157,7 @@ export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.R
         state.progressMeters = Math.min(state.progressMeters + moveDist, state.totalLength)
 
         const pos = positionAtProgress(state.path, state.pathLengths, state.progressMeters)
-        markerRefsRef.current?.get(id)?.setLatLng([pos.lat, pos.lng])
+        positionsRef.current.set(id, { lat: pos.lat, lng: pos.lng, bearing: state.bearing })
       }
       rafRef.current = requestAnimationFrame(frame)
     }
@@ -150,4 +167,6 @@ export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.R
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
   }, [])
+
+  return positionsRef
 }

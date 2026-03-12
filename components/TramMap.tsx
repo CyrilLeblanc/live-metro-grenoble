@@ -1,14 +1,14 @@
 'use client'
 
-import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
 import { useEffect, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
 import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
 import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
-import TramMarker from './TramMarker'
+import CanvasTramLayer, { TramMarkerData } from './CanvasTramLayer'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   useMapEvents({ click: () => onMapClick() })
@@ -39,18 +39,6 @@ const GRENOBLE_BOUNDS: [[number, number], [number, number]] = [
   [44.95, 5.45], // SW
   [45.45, 6.05], // NE
 ]
-
-interface TramMarkerData {
-  id: string
-  position: [number, number]
-  line: string
-  direction: string
-  nextStop: string
-  eta: string
-  isRealtime: boolean
-  color: string
-  bearing: number
-}
 
 function formatEta(secs: number): string {
   if (secs <= 0) return 'arriving'
@@ -83,8 +71,8 @@ export default function TramMap() {
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [zoom, setZoom] = useState(13)
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
-  const markerRefsRef = useRef<Map<string, L.Marker>>(new Map())
-  useAnimatedTrams(apiTrams, markerRefsRef)
+  const [popupTram, setPopupTram] = useState<{ id: string; x: number; y: number; data: TramMarkerData } | null>(null)
+  const positionsRef = useAnimatedTrams(apiTrams)
   const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
@@ -267,6 +255,7 @@ export default function TramMap() {
         <MapClickHandler onMapClick={() => {
           if (stopClickedRef.current) { stopClickedRef.current = false; return }
           setSelectedStop(null)
+          setPopupTram(null)
         }} />
         <ZoomTracker onZoom={setZoom} />
         <MapController mapRef={mapRef} />
@@ -280,22 +269,82 @@ export default function TramMap() {
             onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }); setHighlightedTripId(null) }}
           />
         ))}
-        {tramMarkers.map(m => (
-          <TramMarker
-            key={m.id}
-            ref={(inst) => inst ? markerRefsRef.current.set(m.id, inst) : markerRefsRef.current.delete(m.id)}
-            position={m.position}
-            line={m.line}
-            direction={m.direction}
-            nextStop={m.nextStop}
-            eta={m.eta}
-            isRealtime={m.isRealtime}
-            color={m.color}
-            bearing={m.bearing}
-            highlighted={highlightedTripId !== null && m.id.startsWith(highlightedTripId + '-')}
-          />
-        ))}
+        <CanvasTramLayer
+          tramMarkers={tramMarkers}
+          positionsRef={positionsRef}
+          highlightedTripId={highlightedTripId}
+          onTramClick={(id, x, y) => {
+            const data = tramMarkers.find(m => m.id === id)
+            if (data) setPopupTram({ id, x, y, data })
+          }}
+          onTramHover={(id) => setHighlightedTripId(id ? id.replace(/-\d+$/, '') : null)}
+        />
       </MapContainer>
+      {popupTram && (
+        <div
+          style={{
+            position: 'absolute',
+            left: popupTram.x + 16,
+            top: popupTram.y - 16,
+            zIndex: 1000,
+            padding: '10px 12px',
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            fontSize: 13,
+            background: '#343139',
+            color: '#ffffff',
+            borderRadius: 6,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+            minWidth: 180,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{
+              background: `#${popupTram.data.color}`,
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: 13,
+              padding: '2px 8px',
+              borderRadius: 4,
+              minWidth: 24,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {popupTram.data.line}
+            </span>
+            <span style={{ fontWeight: 600, color: '#ffffff', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+              {popupTram.data.direction}
+            </span>
+            <button
+              onClick={() => setPopupTram(null)}
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}
+              aria-label="Close"
+            >×</button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Next stop</span>
+            <span style={{ fontWeight: 500, color: '#ffffff', fontSize: 12, textAlign: 'right' }}>{popupTram.data.nextStop}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>ETA</span>
+            <span style={{ fontWeight: 500, color: '#96dbeb', fontSize: 12, textAlign: 'right' }}>{popupTram.data.eta}</span>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <span style={{
+              display: 'inline-block',
+              padding: '2px 8px',
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 600,
+              background: popupTram.data.isRealtime ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+              color: popupTram.data.isRealtime ? '#4ade80' : 'rgba(255,255,255,0.5)',
+              border: `1px solid ${popupTram.data.isRealtime ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.15)'}`,
+            }}>
+              {popupTram.data.isRealtime ? 'Live' : 'Theoretical'}
+            </span>
+          </div>
+        </div>
+      )}
       {selectedStop && (
         <StopDeparturePanel
           stop={selectedStop.stop}
@@ -308,9 +357,9 @@ export default function TramMap() {
             setHighlightedTripId(tripId)
             const tram = tramMarkers.find(m => m.id.startsWith(tripId + '-'))
             if (tram && mapRef.current) {
-              const latLng = markerRefsRef.current.get(tram.id)?.getLatLng()
-              const pos: [number, number] = latLng ? [latLng.lat, latLng.lng] : tram.position
-              mapRef.current.flyTo(pos, 16, { duration: 0.8 })
+              const pos = positionsRef.current?.get(tram.id)
+              const latLng: [number, number] = pos ? [pos.lat, pos.lng] : tram.position
+              mapRef.current.flyTo(latLng, 16, { duration: 0.8 })
             }
           }}
         />
