@@ -117,11 +117,21 @@ export function useAnimatedTrams(apiTrams: TramApiItem[]): React.RefObject<Map<s
         speedMs = prev?.speedMs ?? MAX_SPEED / 2
       }
 
+      let progressMeters: number
+      if (prev) {
+        const animatedPos = positionAtProgress(prev.path, prev.pathLengths, prev.progressMeters)
+        const mappedProgress = findProgressOnPath(item.shapePath, lengths, animatedPos)
+        // Forward: keep animated position (smooth). Backward: snap to API position.
+        progressMeters = mappedProgress <= progress ? mappedProgress : progress
+      } else {
+        progressMeters = progress
+      }
+
       animStateRef.current.set(item.id, {
         path: item.shapePath,
         pathLengths: lengths,
         totalLength: total,
-        progressMeters: progress,
+        progressMeters,
         speedMs,
         etaAtUpdate: item.eta,
         updateTime: now,
