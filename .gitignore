@@ -42,3 +42,6 @@ next-env.d.ts
 
 # GTFS data
 public/gtfs/*.json
+
+# Tile cache
+.cache/
