@@ -62,3 +62,7 @@ body {
   display: none !important;
 }
 
+.leaflet-container {
+  background: #3b373f !important;
+}
+
