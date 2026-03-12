@@ -22,6 +22,8 @@ export interface TramPosition {
   eta: number
   isRealtime: boolean
   shapePath: Array<{ lat: number; lng: number }>
+  stopAId: string
+  stopBId: string
 }
 
 let gtfsIndex: GtfsIndex | null = null
@@ -181,6 +183,8 @@ export async function GET() {
             eta: timeB - now,
             isRealtime: realtime,
             shapePath,
+            stopAId: stA.stop_id,
+            stopBId: stB.stop_id,
           })
         }
       }

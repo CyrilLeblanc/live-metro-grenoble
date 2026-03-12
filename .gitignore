@@ -45,3 +45,6 @@ public/gtfs/*.json
 
 # Tile cache
 .cache/
+
+# GPS speed graph data
+/data/segment-speeds/

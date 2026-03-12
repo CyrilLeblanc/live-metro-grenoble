@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react'
+import { haversineDistance, makeSegmentKey, AveragedGraph } from '../lib/geo'
 
 const DECEL_THRESHOLD = 20 // seconds before stop where deceleration begins
 const MAX_SPEED = 6.94     // m/s (25 km/h)
-const RAD = Math.PI / 180
 
 interface LatLng { lat: number; lng: number }
 
@@ -13,6 +13,13 @@ export interface TramApiItem {
   eta: number
   bearing: number
   shapePath: LatLng[]
+  stopAId: string
+  stopBId: string
+  line: string
+  lineColor: string
+  direction: string
+  nextStop: string
+  isRealtime: boolean
 }
 
 export interface TramPosition {
@@ -32,16 +39,7 @@ interface TramAnimState {
   apiLat: number          // position at last API update (for speed computation)
   apiLng: number
   bearing: number
-}
-
-function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000
-  const dLat = (lat2 - lat1) * RAD
-  const dLng = (lng2 - lng1) * RAD
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * RAD) * Math.cos(lat2 * RAD) * Math.sin(dLng / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  segmentKey: string
 }
 
 function buildPathLengths(path: LatLng[]): { lengths: number[]; total: number } {
@@ -82,12 +80,44 @@ function positionAtProgress(path: LatLng[], lengths: number[], progress: number)
   return path[path.length - 1]
 }
 
-export function useAnimatedTrams(apiTrams: TramApiItem[]): React.RefObject<Map<string, TramPosition>> {
+function speedFromGraph(graph: AveragedGraph, eta: number): number {
+  const t = graph.totalDurationSec - eta
+  const pts = graph.points
+  if (pts.length === 0) return 0
+  if (t <= pts[0].tSec) return pts[0].speedMs
+  if (t >= pts[pts.length - 1].tSec) return pts[pts.length - 1].speedMs
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].tSec >= t) {
+      const prev = pts[i - 1]
+      const next = pts[i]
+      const span = next.tSec - prev.tSec
+      const frac = span === 0 ? 0 : (t - prev.tSec) / span
+      return prev.speedMs + frac * (next.speedMs - prev.speedMs)
+    }
+  }
+  return pts[pts.length - 1].speedMs
+}
+
+export function useAnimatedTrams(
+  apiTrams: TramApiItem[],
+  segmentGraphs?: Map<string, AveragedGraph>,
+  speedOverrides?: Map<string, number>,
+): React.RefObject<Map<string, TramPosition>> {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
   const positionsRef = useRef<Map<string, TramPosition>>(new Map())
   const lastApiTimeRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
   const lastFrameTimeRef = useRef<number | null>(null)
+  const segmentGraphsRef = useRef<Map<string, AveragedGraph>>(segmentGraphs ?? new Map())
+  const speedOverridesRef = useRef<Map<string, number>>(speedOverrides ?? new Map())
+
+  useEffect(() => {
+    segmentGraphsRef.current = segmentGraphs ?? new Map()
+  }, [segmentGraphs])
+
+  useEffect(() => {
+    speedOverridesRef.current = speedOverrides ?? new Map()
+  }, [speedOverrides])
 
   // Update anim state on each API update
   useEffect(() => {
@@ -138,6 +168,7 @@ export function useAnimatedTrams(apiTrams: TramApiItem[]): React.RefObject<Map<s
         apiLat: item.lat,
         apiLng: item.lng,
         bearing: item.bearing,
+        segmentKey: makeSegmentKey(item.stopAId, item.stopBId),
       })
     }
 
@@ -161,7 +192,18 @@ export function useAnimatedTrams(apiTrams: TramApiItem[]): React.RefObject<Map<s
         const elapsedSec = (now - state.updateTime) / 1000
         const currentEta = state.etaAtUpdate - elapsedSec
         const factor = Math.max(0, Math.min(1, currentEta / DECEL_THRESHOLD))
-        const moveDist = state.speedMs * factor * dt
+
+        const override = speedOverridesRef.current.get(id)
+        const graph = segmentGraphsRef.current.get(state.segmentKey)
+        let speedMs: number
+        if (override !== undefined) {
+          speedMs = override * factor
+        } else if (graph) {
+          speedMs = speedFromGraph(graph, currentEta) * factor
+        } else {
+          speedMs = state.speedMs * factor
+        }
+        const moveDist = speedMs * dt
 
         // Advance along path, clamped at stop (totalLength)
         state.progressMeters = Math.min(state.progressMeters + moveDist, state.totalLength)
