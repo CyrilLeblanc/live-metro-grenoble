@@ -46,14 +46,14 @@ export async function GET(
     // Cache miss — fall through to upstream fetch
   }
 
-  // Fetch from OSM
+  // Fetch from Métromobilité dark tile server
   let tileBuffer: Buffer
   try {
     const upstream = await fetch(
-      `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
-      { headers: { 'User-Agent': 'grenoble-tram-viewer/1.0 (tile proxy cache)' } }
+      `https://data.mobilites-m.fr/carte-dark/${z}/${x}/${y}.png`,
+      { headers: { 'User-Agent': 'livemetro-grenoble/1.0 (tile proxy cache)' } }
     )
-    if (!upstream.ok) throw new Error(`OSM responded ${upstream.status}`)
+    if (!upstream.ok) throw new Error(`Tile server responded ${upstream.status}`)
     tileBuffer = Buffer.from(await upstream.arrayBuffer())
   } catch {
     // Stale-cache fallback

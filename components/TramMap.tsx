@@ -23,6 +23,10 @@ L.Icon.Default.mergeOptions({
 })
 
 const GRENOBLE_CENTER: [number, number] = [45.1885, 5.7245]
+const GRENOBLE_BOUNDS: [[number, number], [number, number]] = [
+  [44.95, 5.45], // SW
+  [45.45, 6.05], // NE
+]
 
 interface TramMarkerData {
   id: string
@@ -107,7 +111,7 @@ export default function TramMap() {
           if (pts) result.push({ route, points: pts })
         }
       }
-      setLineShapes(result)
+      setLineShapes(result.reverse())
       setTramRouteIds(new Set(routes.map(r => r.route_id)))
 
       const tripRouteMap = new Map<string, string>()
@@ -217,7 +221,15 @@ export default function TramMap() {
           </button>
         </div>
       )}
-      <MapContainer center={GRENOBLE_CENTER} zoom={13} style={{ height: '100%' }}>
+      <MapContainer
+        center={GRENOBLE_CENTER}
+        zoom={13}
+        minZoom={10}
+        maxZoom={18}
+        maxBounds={GRENOBLE_BOUNDS}
+        maxBoundsViscosity={1.0}
+        style={{ height: '100%' }}
+      >
         <TileLayer
           url="/api/tiles/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
