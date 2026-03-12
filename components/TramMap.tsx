@@ -3,7 +3,7 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, Polyline, TileLayer, useMapEvents } from 'react-leaflet'
+import { MapContainer, Polyline, TileLayer, useMapEvents, useMapEvent } from 'react-leaflet'
 import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
@@ -11,6 +11,11 @@ import TramMarker from './TramMarker'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   useMapEvents({ click: () => onMapClick() })
+  return null
+}
+
+function ZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
+  useMapEvent('zoomend', (e) => onZoom((e.target as L.Map).getZoom()))
   return null
 }
 
@@ -66,6 +71,7 @@ export default function TramMap() {
   const [dataLoaded, setDataLoaded] = useState(false)
   const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
+  const [zoom, setZoom] = useState(13)
   const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
   const pollingInFlightRef = useRef(false)
@@ -245,11 +251,14 @@ export default function TramMap() {
           if (stopClickedRef.current) { stopClickedRef.current = false; return }
           setSelectedStop(null)
         }} />
+        <ZoomTracker onZoom={setZoom} />
         {tramStops.map(({ stop, color }) => (
           <StopMarker
             key={stop.stop_id}
             stop={stop}
             color={color}
+            zoom={zoom}
+            isSelected={selectedStop?.stop.stop_id === stop.stop_id}
             onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }) }}
           />
         ))}
