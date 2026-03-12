@@ -71,6 +71,7 @@ export default function TramMap() {
   const [dataLoaded, setDataLoaded] = useState(false)
   const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
+  const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [zoom, setZoom] = useState(13)
   const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
@@ -125,6 +126,7 @@ export default function TramMap() {
 
       const routeColorMap = new Map<string, string>()
       for (const route of routes) routeColorMap.set(route.route_id, route.route_color)
+      setRouteColorMap(routeColorMap)
 
       const stopById = new Map<string, Stop>()
       for (const stop of stops) stopById.set(stop.stop_id, stop)
@@ -214,12 +216,13 @@ export default function TramMap() {
   return (
     <div style={{ height: '100vh', position: 'relative' }}>
       {dataLoaded && (
-        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000 }}
-             className="flex items-center gap-2 bg-gray-800/90 text-white rounded px-2 py-1 text-sm shadow font-medium">
-          <span>{secondsLeft}s</span>
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#343139', color: '#ffffff', border: '1px solid #3d3a41' }}
+             className="flex items-center gap-2 rounded px-2 py-1 text-sm shadow font-medium w-fit">
+          <span style={{ color: 'rgba(255,255,255,0.6)' }}>{secondsLeft}s</span>
           <button
             onClick={() => tickRef.current?.()}
-            className="flex items-center justify-center hover:text-blue-300"
+            className="flex items-center justify-center"
+            style={{ color: '#96dbeb' }}
             title="Force reload"
             aria-label="Force reload"
           >
@@ -281,6 +284,7 @@ export default function TramMap() {
           stop={selectedStop.stop}
           color={selectedStop.color}
           tramRouteIds={tramRouteIds}
+          routeColorMap={routeColorMap}
           onClose={() => setSelectedStop(null)}
         />
       )}

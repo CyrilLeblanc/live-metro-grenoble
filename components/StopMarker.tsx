@@ -15,7 +15,7 @@ interface Props {
 
 export default function StopMarker({ stop, color, zoom, onClick, isSelected = false }: Props) {
   if (zoom < SVG_THRESHOLD) {
-    const fillColor = color === 'aaaaaa' ? '#7C3AED' : `#${color}`
+    const fillColor = '#b49bda'
     return (
       <CircleMarker
         center={[stop.stop_lat, stop.stop_lon]}

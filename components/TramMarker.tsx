@@ -31,7 +31,7 @@ export default function TramMarker({ position, line, direction, nextStop, eta, i
   return (
     <Marker position={position} icon={icon}>
       <Popup className="tram-popup">
-        <div style={{ padding: '10px 12px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13 }}>
+        <div style={{ padding: '10px 12px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13, background: '#343139', color: '#ffffff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{
               background: `#${color || '888888'}`,
@@ -47,17 +47,17 @@ export default function TramMarker({ position, line, direction, nextStop, eta, i
             }}>
               {line}
             </span>
-            <span style={{ fontWeight: 600, color: '#1a1a1a', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+            <span style={{ fontWeight: 600, color: '#ffffff', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
               {direction}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-            <span style={{ color: '#666', fontSize: 12 }}>Next stop</span>
-            <span style={{ fontWeight: 500, color: '#1a1a1a', fontSize: 12, textAlign: 'right' }}>{nextStop}</span>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Next stop</span>
+            <span style={{ fontWeight: 500, color: '#ffffff', fontSize: 12, textAlign: 'right' }}>{nextStop}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-            <span style={{ color: '#666', fontSize: 12 }}>ETA</span>
-            <span style={{ fontWeight: 500, color: '#1a1a1a', fontSize: 12, textAlign: 'right' }}>{eta}</span>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>ETA</span>
+            <span style={{ fontWeight: 500, color: '#96dbeb', fontSize: 12, textAlign: 'right' }}>{eta}</span>
           </div>
           <div style={{ marginTop: 8 }}>
             <span style={{
@@ -66,8 +66,9 @@ export default function TramMarker({ position, line, direction, nextStop, eta, i
               borderRadius: 999,
               fontSize: 11,
               fontWeight: 600,
-              background: isRealtime ? '#dcfce7' : '#fef3c7',
-              color: isRealtime ? '#15803d' : '#92400e',
+              background: isRealtime ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+              color: isRealtime ? '#4ade80' : 'rgba(255,255,255,0.5)',
+              border: `1px solid ${isRealtime ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.15)'}`,
             }}>
               {isRealtime ? 'Live' : 'Theoretical'}
             </span>

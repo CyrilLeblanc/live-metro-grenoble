@@ -7,6 +7,7 @@ interface Props {
   stop: Stop
   color: string
   tramRouteIds: Set<string>
+  routeColorMap: Map<string, string>
   onClose: () => void
 }
 
@@ -15,6 +16,7 @@ interface Departure {
   realtime: boolean
   headsign: string
   routeShortName: string
+  color: string
 }
 
 function formatHHMM(unixSecs: number): string {
@@ -42,7 +44,7 @@ function getRouteShortName(patternId: string, tramRouteIds: Set<string>): string
   return parts[2] ?? patternId
 }
 
-export default function StopDeparturePanel({ stop, color, tramRouteIds, onClose }: Props) {
+export default function StopDeparturePanel({ stop, color, tramRouteIds, routeColorMap, onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [departures, setDepartures] = useState<Departure[]>([])
@@ -60,6 +62,10 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, onClose 
       const all: Departure[] = []
       for (const g of filtered) {
         const routeShortName = getRouteShortName(g.pattern.id, tramRouteIds)
+        let depColor = '#b49bda'
+        for (const [routeId, c] of routeColorMap) {
+          if (g.pattern.id.includes(routeId)) { depColor = `#${c}`; break }
+        }
         for (const t of g.times) {
           const depSecs = t.realtime ? t.realtimeDeparture : t.scheduledDeparture
           all.push({
@@ -67,6 +73,7 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, onClose 
             realtime: t.realtime,
             headsign: g.pattern.desc,
             routeShortName,
+            color: depColor,
           })
         }
       }
@@ -84,21 +91,20 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, onClose 
     load()
   }, [stop.stop_id])
 
-  const badgeColor = color && color !== 'aaaaaa' ? `#${color}` : '#7C3AED'
-
   return (
-    <div className="
-      fixed top-0 right-0 h-full w-80 z-[1100] bg-white shadow-xl flex flex-col
-      max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:w-full max-sm:h-auto max-sm:max-h-64 max-sm:rounded-t-xl
-    ">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
+    <div
+      className="fixed top-0 right-0 h-full w-80 z-[1100] shadow-xl flex flex-col max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:w-full max-sm:h-auto max-sm:max-h-64 max-sm:rounded-t-xl"
+      style={{ background: '#343139', color: '#ffffff', borderLeft: '1px solid #3d3a41' }}
+    >
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #3d3a41' }}>
         <div>
-          <div className="font-semibold text-gray-900">{stop.stop_name}</div>
-          <div className="text-xs text-gray-500">{stop.stop_id}</div>
+          <div className="font-semibold">{stop.stop_name}</div>
+          <div className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>{stop.stop_id}</div>
         </div>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-700 text-xl leading-none px-1"
+          className="text-xl leading-none px-1"
+          style={{ color: 'rgba(255,255,255,0.5)' }}
           aria-label="Close"
         >
           ×
@@ -107,41 +113,42 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, onClose 
 
       <div className="flex-1 overflow-y-auto">
         {loading && (
-          <div className="flex items-center justify-center h-24 text-gray-500 text-sm">
+          <div className="flex items-center justify-center h-24 text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
             Loading…
           </div>
         )}
         {error && (
           <div className="flex flex-col items-center justify-center h-24 gap-2 text-sm">
-            <span className="text-red-500">{error}</span>
+            <span style={{ color: '#f87171' }}>{error}</span>
             <button
               onClick={load}
-              className="text-blue-600 hover:underline"
+              className="hover:underline"
+              style={{ color: '#96dbeb' }}
             >
               Retry
             </button>
           </div>
         )}
         {!loading && !error && departures.length === 0 && (
-          <div className="flex items-center justify-center h-24 text-gray-400 text-sm">
+          <div className="flex items-center justify-center h-24 text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
             No upcoming departures
           </div>
         )}
         {!loading && !error && departures.map((dep, i) => (
-          <div key={i} className="flex items-center gap-3 px-4 py-3 border-b last:border-0">
+          <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid #3d3a41' }}>
             <span
               className="shrink-0 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[2rem] text-center"
-              style={{ backgroundColor: badgeColor }}
+              style={{ backgroundColor: dep.color }}
             >
               {dep.routeShortName}
             </span>
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-gray-800 truncate">{dep.headsign}</div>
-              <div className="text-xs text-gray-500">{formatRelative(dep.time)}</div>
+              <div className="text-sm truncate">{dep.headsign}</div>
+              <div className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>{formatRelative(dep.time)}</div>
             </div>
             <div className="shrink-0 text-right">
-              <div className="text-sm font-medium text-gray-900">{formatHHMM(dep.time)}</div>
-              <div className={`text-xs ${dep.realtime ? 'text-green-600' : 'text-gray-400'}`}>
+              <div className="text-sm font-medium" style={{ color: '#96dbeb' }}>{formatHHMM(dep.time)}</div>
+              <div className="text-xs" style={{ color: dep.realtime ? '#4ade80' : 'rgba(255,255,255,0.4)' }}>
                 {dep.realtime ? 'live' : 'scheduled'}
               </div>
             </div>

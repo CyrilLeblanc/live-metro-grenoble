@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #26232b;
+  --foreground: #ffffff;
 }
 
 @theme inline {
@@ -10,13 +10,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
@@ -48,13 +41,24 @@ body {
 .tram-popup .leaflet-popup-content-wrapper {
   padding: 0 !important;
   border-radius: 10px !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
   overflow: hidden !important;
   min-width: 180px !important;
+  background: #343139 !important;
+  color: #d3bbff !important;
+  border: 1px solid #3d3a41 !important;
 }
 
 .tram-popup .leaflet-popup-content {
   margin: 0 !important;
   line-height: 1.4 !important;
+}
+
+.tram-popup .leaflet-popup-tip {
+  background: #343139 !important;
+}
+
+.leaflet-control-zoom {
+  display: none !important;
 }
 
