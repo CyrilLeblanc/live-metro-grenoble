@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
 import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
+import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
 import TramMarker from './TramMarker'
@@ -68,18 +69,21 @@ interface TramApiItem {
   nextStop: string
   eta: number
   isRealtime: boolean
+  shapePath: Array<{ lat: number; lng: number }>
 }
 
 export default function TramMap() {
   const [lineShapes, setLineShapes] = useState<Array<{ route: Route; points: ShapePoint[] }>>([])
   const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
   const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
+  const [apiTrams, setApiTrams] = useState<TramApiItem[]>([])
   const [dataLoaded, setDataLoaded] = useState(false)
   const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [zoom, setZoom] = useState(13)
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
+  const animatedPositions = useAnimatedTrams(apiTrams)
   const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
@@ -195,6 +199,7 @@ export default function TramMap() {
         const res = await fetch('/api/trams')
         if (!res.ok) return
         const data: TramApiItem[] = await res.json()
+        setApiTrams(data)
         setTramMarkers(data.map(item => ({
           id: item.id,
           position: [item.lat, item.lng] as [number, number],
@@ -274,20 +279,24 @@ export default function TramMap() {
             onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }); setHighlightedTripId(null) }}
           />
         ))}
-        {tramMarkers.map(m => (
-          <TramMarker
-            key={m.id}
-            position={m.position}
-            line={m.line}
-            direction={m.direction}
-            nextStop={m.nextStop}
-            eta={m.eta}
-            isRealtime={m.isRealtime}
-            color={m.color}
-            bearing={m.bearing}
-            highlighted={highlightedTripId !== null && m.id.startsWith(highlightedTripId + '-')}
-          />
-        ))}
+        {tramMarkers.map(m => {
+          const animPos = animatedPositions.get(m.id)
+          const pos: [number, number] = animPos ? [animPos.lat, animPos.lng] : m.position
+          return (
+            <TramMarker
+              key={m.id}
+              position={pos}
+              line={m.line}
+              direction={m.direction}
+              nextStop={m.nextStop}
+              eta={m.eta}
+              isRealtime={m.isRealtime}
+              color={m.color}
+              bearing={m.bearing}
+              highlighted={highlightedTripId !== null && m.id.startsWith(highlightedTripId + '-')}
+            />
+          )
+        })}
       </MapContainer>
       {selectedStop && (
         <StopDeparturePanel
@@ -300,7 +309,11 @@ export default function TramMap() {
           onClick={(tripId) => {
             setHighlightedTripId(tripId)
             const tram = tramMarkers.find(m => m.id.startsWith(tripId + '-'))
-            if (tram && mapRef.current) mapRef.current.flyTo(tram.position, 16, { duration: 0.8 })
+            if (tram && mapRef.current) {
+              const animPos = animatedPositions.get(tram.id)
+              const pos: [number, number] = animPos ? [animPos.lat, animPos.lng] : tram.position
+              mapRef.current.flyTo(pos, 16, { duration: 0.8 })
+            }
           }}
         />
       )}

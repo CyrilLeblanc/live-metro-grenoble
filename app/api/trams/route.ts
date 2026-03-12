@@ -21,10 +21,37 @@ export interface TramPosition {
   nextStop: string
   eta: number
   isRealtime: boolean
+  shapePath: Array<{ lat: number; lng: number }>
 }
 
 let gtfsIndex: GtfsIndex | null = null
 let lastGoodResponse: TramPosition[] | null = null
+
+function extractShapeSegment(
+  shape: ShapePoint[] | undefined,
+  stopA: Stop,
+  stopB: Stop,
+): Array<{ lat: number; lng: number }> {
+  const a = { lat: stopA.stop_lat, lng: stopA.stop_lon }
+  const b = { lat: stopB.stop_lat, lng: stopB.stop_lon }
+  if (!shape || shape.length < 2) return [a, b]
+
+  let iA = 0, iB = 0, dA = Infinity, dB = Infinity
+  for (let i = 0; i < shape.length; i++) {
+    const da = Math.hypot(shape[i].shape_pt_lat - stopA.stop_lat, shape[i].shape_pt_lon - stopA.stop_lon)
+    const db = Math.hypot(shape[i].shape_pt_lat - stopB.stop_lat, shape[i].shape_pt_lon - stopB.stop_lon)
+    if (da < dA) { dA = da; iA = i }
+    if (db < dB) { dB = db; iB = i }
+  }
+
+  const from = Math.min(iA, iB)
+  const to = Math.max(iA, iB)
+  return [
+    a,
+    ...shape.slice(from, to + 1).map(p => ({ lat: p.shape_pt_lat, lng: p.shape_pt_lon })),
+    b,
+  ]
+}
 
 async function buildGtfsIndex(): Promise<GtfsIndex> {
   const [routes, trips, shapes, stops, stopTimes] = await Promise.all([
@@ -141,6 +168,7 @@ export async function GET() {
           const dLat = stopB.stop_lat - pos.lat
           const dLon = stopB.stop_lon - pos.lng
           const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI
+          const shapePath = extractShapeSegment(shape, stopA, stopB)
           results.push({
             id: `${tripId}-${stopIdx}`,
             lat: pos.lat,
@@ -152,6 +180,7 @@ export async function GET() {
             nextStop: stopB.stop_name,
             eta: timeB - now,
             isRealtime: realtime,
+            shapePath,
           })
         }
       }
