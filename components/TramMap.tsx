@@ -83,7 +83,8 @@ export default function TramMap() {
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [zoom, setZoom] = useState(13)
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
-  const animatedPositions = useAnimatedTrams(apiTrams)
+  const markerRefsRef = useRef<Map<string, L.Marker>>(new Map())
+  useAnimatedTrams(apiTrams, markerRefsRef)
   const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
@@ -279,24 +280,21 @@ export default function TramMap() {
             onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }); setHighlightedTripId(null) }}
           />
         ))}
-        {tramMarkers.map(m => {
-          const animPos = animatedPositions.get(m.id)
-          const pos: [number, number] = animPos ? [animPos.lat, animPos.lng] : m.position
-          return (
-            <TramMarker
-              key={m.id}
-              position={pos}
-              line={m.line}
-              direction={m.direction}
-              nextStop={m.nextStop}
-              eta={m.eta}
-              isRealtime={m.isRealtime}
-              color={m.color}
-              bearing={m.bearing}
-              highlighted={highlightedTripId !== null && m.id.startsWith(highlightedTripId + '-')}
-            />
-          )
-        })}
+        {tramMarkers.map(m => (
+          <TramMarker
+            key={m.id}
+            ref={(inst) => inst ? markerRefsRef.current.set(m.id, inst) : markerRefsRef.current.delete(m.id)}
+            position={m.position}
+            line={m.line}
+            direction={m.direction}
+            nextStop={m.nextStop}
+            eta={m.eta}
+            isRealtime={m.isRealtime}
+            color={m.color}
+            bearing={m.bearing}
+            highlighted={highlightedTripId !== null && m.id.startsWith(highlightedTripId + '-')}
+          />
+        ))}
       </MapContainer>
       {selectedStop && (
         <StopDeparturePanel
@@ -310,8 +308,8 @@ export default function TramMap() {
             setHighlightedTripId(tripId)
             const tram = tramMarkers.find(m => m.id.startsWith(tripId + '-'))
             if (tram && mapRef.current) {
-              const animPos = animatedPositions.get(tram.id)
-              const pos: [number, number] = animPos ? [animPos.lat, animPos.lng] : tram.position
+              const latLng = markerRefsRef.current.get(tram.id)?.getLatLng()
+              const pos: [number, number] = latLng ? [latLng.lat, latLng.lng] : tram.position
               mapRef.current.flyTo(pos, 16, { duration: 0.8 })
             }
           }}

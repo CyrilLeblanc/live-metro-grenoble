@@ -1,6 +1,6 @@
 'use client'
 import L from 'leaflet'
-import { useMemo } from 'react'
+import React, { useMemo } from 'react'
 import { Marker, Popup } from 'react-leaflet'
 
 interface Props {
@@ -15,7 +15,7 @@ interface Props {
   highlighted?: boolean
 }
 
-export default function TramMarker({ position, line, direction, nextStop, eta, isRealtime, color, bearing, highlighted = false }: Props) {
+const TramMarker = React.forwardRef<L.Marker, Props>(function TramMarker({ position, line, direction, nextStop, eta, isRealtime, color, bearing, highlighted = false }, ref) {
   const icon = useMemo(() => {
   const fill = `#${color || '888888'}`
   const opacity = isRealtime ? 1 : 0.5
@@ -36,7 +36,7 @@ export default function TramMarker({ position, line, direction, nextStop, eta, i
   if (!position) return null
 
   return (
-    <Marker position={position} icon={icon}>
+    <Marker ref={ref} position={position} icon={icon}>
       <Popup className="tram-popup">
         <div style={{ padding: '10px 12px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13, background: '#343139', color: '#ffffff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -84,4 +84,6 @@ export default function TramMarker({ position, line, direction, nextStop, eta, i
       </Popup>
     </Marker>
   )
-}
+})
+
+export default TramMarker

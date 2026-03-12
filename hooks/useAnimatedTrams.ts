@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import L from 'leaflet'
+import React, { useEffect, useRef } from 'react'
 
 const DECEL_THRESHOLD = 20 // seconds before stop where deceleration begins
 const MAX_SPEED = 6.94     // m/s (25 km/h)
@@ -74,12 +75,11 @@ function positionAtProgress(path: LatLng[], lengths: number[], progress: number)
   return path[path.length - 1]
 }
 
-export function useAnimatedTrams(apiTrams: TramApiItem[]): Map<string, LatLng> {
+export function useAnimatedTrams(apiTrams: TramApiItem[], markerRefsRef: React.RefObject<Map<string, L.Marker>>): void {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
   const lastApiTimeRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
   const lastFrameTimeRef = useRef<number | null>(null)
-  const [positions, setPositions] = useState<Map<string, LatLng>>(new Map())
 
   // Update anim state on each API update
   useEffect(() => {
@@ -130,8 +130,6 @@ export function useAnimatedTrams(apiTrams: TramApiItem[]): Map<string, LatLng> {
       const dt = lastFrameTimeRef.current !== null ? (now - lastFrameTimeRef.current) / 1000 : 0
       lastFrameTimeRef.current = now
 
-      const newPositions = new Map<string, LatLng>()
-
       for (const [id, state] of animStateRef.current) {
         const elapsedSec = (now - state.updateTime) / 1000
         const currentEta = state.etaAtUpdate - elapsedSec
@@ -141,10 +139,9 @@ export function useAnimatedTrams(apiTrams: TramApiItem[]): Map<string, LatLng> {
         // Advance along path, clamped at stop (totalLength)
         state.progressMeters = Math.min(state.progressMeters + moveDist, state.totalLength)
 
-        newPositions.set(id, positionAtProgress(state.path, state.pathLengths, state.progressMeters))
+        const pos = positionAtProgress(state.path, state.pathLengths, state.progressMeters)
+        markerRefsRef.current?.get(id)?.setLatLng([pos.lat, pos.lng])
       }
-
-      setPositions(new Map(newPositions))
       rafRef.current = requestAnimationFrame(frame)
     }
 
@@ -153,6 +150,4 @@ export function useAnimatedTrams(apiTrams: TramApiItem[]): Map<string, LatLng> {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
   }, [])
-
-  return positions
 }
