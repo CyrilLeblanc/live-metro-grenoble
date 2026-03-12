@@ -1,5 +1,6 @@
 'use client'
 import L from 'leaflet'
+import { useMemo } from 'react'
 import { Marker, Popup } from 'react-leaflet'
 
 interface Props {
@@ -15,14 +16,13 @@ interface Props {
 }
 
 export default function TramMarker({ position, line, direction, nextStop, eta, isRealtime, color, bearing, highlighted = false }: Props) {
-  if (!position) return null
-
+  const icon = useMemo(() => {
   const fill = `#${color || '888888'}`
   const opacity = isRealtime ? 1 : 0.5
   const size = highlighted ? 32 : 24
   const half = size / 2
   const filter = highlighted ? 'filter:drop-shadow(0 0 4px white)' : ''
-  const icon = L.divIcon({
+  return L.divIcon({
     html: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"
       style="transform:rotate(${bearing}deg);display:block;opacity:${opacity};${filter}">
       <polygon points="12,2 22,22 12,17 2,22" fill="${fill}" stroke="white" stroke-width="1.5"/>
@@ -31,6 +31,9 @@ export default function TramMarker({ position, line, direction, nextStop, eta, i
     iconSize: [size, size],
     iconAnchor: [half, half],
   })
+  }, [color, isRealtime, highlighted, bearing])
+
+  if (!position) return null
 
   return (
     <Marker position={position} icon={icon}>
