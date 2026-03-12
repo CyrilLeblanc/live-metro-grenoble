@@ -54,6 +54,20 @@ npm start
 
 Re-run `npm run parse-gtfs` whenever the timetable changes. The script overwrites the existing files in `public/gtfs/`.
 
+## Tile proxy & cache
+
+Map tiles are not fetched directly from OpenStreetMap by the browser. Instead the
+frontend requests tiles from `/api/tiles/{z}/{x}/{y}.png`, which:
+
+1. Checks `.cache/tiles/{z}/{x}/{y}.png` for a cached copy less than 30 days old
+2. If found: serves the cached file immediately
+3. If not found or expired: fetches the tile from `tile.openstreetmap.org`, writes it
+   to `.cache/` in the background, and streams the response
+
+The `.cache/` directory is git-ignored and created automatically on first use. Cached
+tiles persist across server restarts. Re-deploying the app to a new machine will start
+with an empty cache; tiles are re-fetched on demand.
+
 ## Known limitations
 
 - **Positions are estimates** — no raw GPS signal; positions are interpolated between scheduled stops
@@ -71,6 +85,7 @@ app/
   layout.tsx                      Root layout + metadata
   api/stoptimes/route.ts          Proxy for Métromobilité API (CORS bypass)
   api/trams/route.ts              Server-side tram position computation (GTFS index + interpolation)
+  api/tiles/[...path]/route.ts    OSM tile proxy with 30-day filesystem cache
 components/
   TramMap.tsx                     Core map: fetches tram positions, renders map
   TramMapLoader.tsx               Dynamic import wrapper (ssr: false — Leaflet needs window)
