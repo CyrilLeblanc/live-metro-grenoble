@@ -3,7 +3,7 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, Polyline, TileLayer, useMapEvents, useMapEvent } from 'react-leaflet'
+import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
 import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
@@ -16,6 +16,12 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
 
 function ZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
   useMapEvent('zoomend', (e) => onZoom((e.target as L.Map).getZoom()))
+  return null
+}
+
+function MapController({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
+  const map = useMap()
+  useEffect(() => { mapRef.current = map }, [map])
   return null
 }
 
@@ -73,6 +79,8 @@ export default function TramMap() {
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [zoom, setZoom] = useState(13)
+  const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
+  const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
   const [secondsLeft, setSecondsLeft] = useState(10)
   const pollingInFlightRef = useRef(false)
@@ -255,6 +263,7 @@ export default function TramMap() {
           setSelectedStop(null)
         }} />
         <ZoomTracker onZoom={setZoom} />
+        <MapController mapRef={mapRef} />
         {tramStops.map(({ stop, color }) => (
           <StopMarker
             key={stop.stop_id}
@@ -262,7 +271,7 @@ export default function TramMap() {
             color={color}
             zoom={zoom}
             isSelected={selectedStop?.stop.stop_id === stop.stop_id}
-            onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }) }}
+            onClick={() => { stopClickedRef.current = true; setSelectedStop({ stop, color }); setHighlightedTripId(null) }}
           />
         ))}
         {tramMarkers.map(m => (
@@ -276,6 +285,7 @@ export default function TramMap() {
             isRealtime={m.isRealtime}
             color={m.color}
             bearing={m.bearing}
+            highlighted={highlightedTripId !== null && m.id.startsWith(highlightedTripId + '-')}
           />
         ))}
       </MapContainer>
@@ -285,7 +295,13 @@ export default function TramMap() {
           color={selectedStop.color}
           tramRouteIds={tramRouteIds}
           routeColorMap={routeColorMap}
-          onClose={() => setSelectedStop(null)}
+          onClose={() => { setSelectedStop(null); setHighlightedTripId(null) }}
+          onHover={(tripId) => setHighlightedTripId(tripId)}
+          onClick={(tripId) => {
+            setHighlightedTripId(tripId)
+            const tram = tramMarkers.find(m => m.id.startsWith(tripId + '-'))
+            if (tram && mapRef.current) mapRef.current.flyTo(tram.position, 16, { duration: 0.8 })
+          }}
         />
       )}
     </div>

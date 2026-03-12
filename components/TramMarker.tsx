@@ -11,21 +11,25 @@ interface Props {
   isRealtime: boolean
   color: string
   bearing: number
+  highlighted?: boolean
 }
 
-export default function TramMarker({ position, line, direction, nextStop, eta, isRealtime, color, bearing }: Props) {
+export default function TramMarker({ position, line, direction, nextStop, eta, isRealtime, color, bearing, highlighted = false }: Props) {
   if (!position) return null
 
   const fill = `#${color || '888888'}`
   const opacity = isRealtime ? 1 : 0.5
+  const size = highlighted ? 32 : 24
+  const half = size / 2
+  const filter = highlighted ? 'filter:drop-shadow(0 0 4px white)' : ''
   const icon = L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-      style="transform:rotate(${bearing}deg);display:block;opacity:${opacity}">
+    html: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"
+      style="transform:rotate(${bearing}deg);display:block;opacity:${opacity};${filter}">
       <polygon points="12,2 22,22 12,17 2,22" fill="${fill}" stroke="white" stroke-width="1.5"/>
     </svg>`,
     className: '',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [size, size],
+    iconAnchor: [half, half],
   })
 
   return (

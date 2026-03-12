@@ -9,6 +9,8 @@ interface Props {
   tramRouteIds: Set<string>
   routeColorMap: Map<string, string>
   onClose: () => void
+  onHover: (tripId: string | null) => void
+  onClick: (tripId: string) => void
 }
 
 interface Departure {
@@ -17,6 +19,7 @@ interface Departure {
   headsign: string
   routeShortName: string
   color: string
+  tripId: string
 }
 
 function formatHHMM(unixSecs: number): string {
@@ -44,7 +47,7 @@ function getRouteShortName(patternId: string, tramRouteIds: Set<string>): string
   return parts[2] ?? patternId
 }
 
-export default function StopDeparturePanel({ stop, color, tramRouteIds, routeColorMap, onClose }: Props) {
+export default function StopDeparturePanel({ stop, color, tramRouteIds, routeColorMap, onClose, onHover, onClick }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [departures, setDepartures] = useState<Departure[]>([])
@@ -68,12 +71,14 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
         }
         for (const t of g.times) {
           const depSecs = t.realtime ? t.realtimeDeparture : t.scheduledDeparture
+          const tripId = t.tripId.includes(':') ? t.tripId.split(':').slice(1).join(':') : t.tripId
           all.push({
             time: t.serviceDay + depSecs,
             realtime: t.realtime,
             headsign: g.pattern.desc,
             routeShortName,
             color: depColor,
+            tripId,
           })
         }
       }
@@ -135,7 +140,14 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
           </div>
         )}
         {!loading && !error && departures.map((dep, i) => (
-          <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid #3d3a41' }}>
+          <div
+            key={i}
+            className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+            style={{ borderBottom: '1px solid #3d3a41' }}
+            onMouseEnter={() => onHover(dep.tripId)}
+            onMouseLeave={() => onHover(null)}
+            onClick={() => onClick(dep.tripId)}
+          >
             <span
               className="shrink-0 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[2rem] text-center"
               style={{ backgroundColor: dep.color }}
