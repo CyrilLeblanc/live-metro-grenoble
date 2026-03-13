@@ -56,7 +56,19 @@ npm start
 
 Re-run `npm run parse-gtfs` whenever the timetable changes. The script overwrites the existing files in `public/gtfs/`.
 
-## Tile proxy & cache
+## Server-side caching
+
+All upstream Métromobilité API calls are cached server-side so that load scales with time, not user count.
+
+### Tram positions (`/api/trams`)
+
+The most expensive endpoint: it fans out to every active stop cluster in parallel on each call. The result is cached in memory for **10 seconds**. All users polling within the same window share a single upstream fetch. Concurrent requests during a cache miss are deduplicated — only one fan-out is issued; the others await its result.
+
+### Stop times (`/api/stoptimes`)
+
+Responses are cached per stop ID in memory for **10 seconds**. Multiple users clicking the same stop within that window share one upstream call.
+
+### Map tiles (`/api/tiles`)
 
 Map tiles are not fetched directly by the browser. Instead the frontend requests
 tiles from `/api/tiles/{z}/{x}/{y}.png`, which:
@@ -70,6 +82,10 @@ tiles from `/api/tiles/{z}/{x}/{y}.png`, which:
 The `.cache/` directory is git-ignored and created automatically on first use. Cached
 tiles persist across server restarts. Re-deploying the app to a new machine will start
 with an empty cache; tiles are re-fetched on demand.
+
+### GTFS static data
+
+The GTFS index (stops, trips, routes, stop times, shapes) is loaded from disk once per server process and held in memory for the lifetime of the process.
 
 ## "I'm on a tram" — GPS speed graphs
 
