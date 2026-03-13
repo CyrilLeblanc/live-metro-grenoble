@@ -114,10 +114,15 @@ components/
   OnTramOverlay.tsx                 Fixed overlay: idle / searching / confirm / active GPS states
 hooks/
   useAnimatedTrams.ts               rAF animation loop; accepts segment graphs + speed overrides
+  useGtfsData.ts                    Loads and transforms all five GTFS files; builds shapes, stops, colour maps
+  usePolling.ts                     Manages 10-second tram position polling cycle with countdown timer
   useUserOnTram.ts                  GPS tracking, EWMA speed, segment buffer, auto-POST on stop crossing
 lib/
+  config.ts                         Centralised constants (viewport bounds, animation, GPS, polling thresholds)
   gtfs.ts                           Loads & caches public/gtfs/*.json
   interpolator.ts                   Time-based position interpolation along shape polylines
+  pathUtils.ts                      Path geometry utilities: cumulative lengths, progress interpolation, bearing
+  speedUtils.ts                     Linear speed interpolation for GPS-derived speed graphs
   api.ts                            Client fetch wrapper for /api/stoptimes
   geo.ts                            haversineDistance, makeSegmentKey, AveragedGraph type
   segmentSpeeds.ts                  Server-only: file I/O for speed graph records, averaging logic
