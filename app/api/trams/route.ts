@@ -41,6 +41,12 @@ export interface TramPosition {
 let gtfsIndex: GtfsIndex | null = null
 let lastGoodResponse: TramPosition[] | null = null
 
+// Shared response cache: all users within the same 10 s window get the same result.
+// inFlightFetch deduplicates concurrent requests during a cache miss.
+const RESPONSE_CACHE_TTL_MS = 10_000
+let cachedResponse: { data: TramPosition[]; fetchedAt: number } | null = null
+let inFlightFetch: Promise<TramPosition[]> | null = null
+
 function extractShapeSegment(
   shape: ShapePoint[] | undefined,
   stopA: Stop,
@@ -104,7 +110,7 @@ async function buildGtfsIndex(): Promise<GtfsIndex> {
   return { stopById, tripById, routeById, stopTimesByTrip, shapeByShapeId, activeClusterIds }
 }
 
-export async function GET() {
+async function fetchTramPositions(): Promise<TramPosition[]> {
   if (!gtfsIndex) {
     gtfsIndex = await buildGtfsIndex()
   }
@@ -211,15 +217,32 @@ export async function GET() {
   }
 
   if (results.length > 0) {
-    // Cache for stale-fallback on next failure
     lastGoodResponse = results
-    return Response.json(results)
+    return results
   }
 
-  // Stale-cache fallback: return last known positions when upstream is unavailable
-  if (lastGoodResponse) {
-    return Response.json(lastGoodResponse)
+  if (lastGoodResponse) return lastGoodResponse
+  return []
+}
+
+export async function GET() {
+  // Serve cached result if still fresh
+  if (cachedResponse && Date.now() - cachedResponse.fetchedAt < RESPONSE_CACHE_TTL_MS) {
+    return Response.json(cachedResponse.data)
   }
 
-  return Response.json([])
+  // Deduplicate concurrent requests: if a fetch is already in-flight, await it
+  if (!inFlightFetch) {
+    inFlightFetch = fetchTramPositions().then(data => {
+      cachedResponse = { data, fetchedAt: Date.now() }
+      inFlightFetch = null
+      return data
+    }).catch(err => {
+      inFlightFetch = null
+      throw err
+    })
+  }
+
+  const data = await inFlightFetch
+  return Response.json(data)
 }
