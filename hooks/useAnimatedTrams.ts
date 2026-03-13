@@ -152,7 +152,7 @@ export function useAnimatedTrams(
           speedMs = override * factor
         } else if (graph) {
           // Community-contributed speed profile for this segment
-          speedMs = interpolateSpeed(graph.points, graph.totalDurationSec - currentEta) * factor
+          speedMs = interpolateSpeed(graph.points, currentEta) * factor
         } else {
           // Fall back to API-derived speed estimate
           speedMs = state.speedMs * factor

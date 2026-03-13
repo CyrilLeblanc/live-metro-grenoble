@@ -24,6 +24,7 @@ interface SegmentBuffer {
   stopAId: string
   stopBId: string
   startTime: number
+  etaAtConfirmation: number
   points: Array<{ tSec: number; speedMs: number }>
 }
 
@@ -92,6 +93,7 @@ export function useUserOnTram(
           stopAId: tram.stopAId,
           stopBId: tram.stopBId,
           startTime: Date.now(),
+          etaAtConfirmation: tram.eta,
           points: [],
         }
       }
@@ -131,11 +133,12 @@ export function useUserOnTram(
       segmentBufferRef.current = null
       return
     }
+    const orderedPoints = [...buf.points].reverse()
     const payload = {
       stopAId: buf.stopAId,
       stopBId: buf.stopBId,
-      totalDurationSec: buf.points[buf.points.length - 1].tSec,
-      points: buf.points,
+      totalDurationSec: buf.etaAtConfirmation,
+      points: orderedPoints,
     }
     segmentBufferRef.current = null
     fetch('/api/segment-speeds', {
@@ -211,7 +214,8 @@ export function useUserOnTram(
 
     // Append to segment buffer
     if (isConfirmedRef.current && segmentBufferRef.current && ewmaSpeedRef.current !== null) {
-      const tSec = (Date.now() - segmentBufferRef.current.startTime) / 1000
+      const elapsed = (Date.now() - segmentBufferRef.current.startTime) / 1000
+      const tSec = Math.max(0, segmentBufferRef.current.etaAtConfirmation - elapsed)
       segmentBufferRef.current.points.push({ tSec, speedMs: ewmaSpeedRef.current })
     }
   }
@@ -260,6 +264,7 @@ export function useUserOnTram(
       stopAId: tram.stopAId,
       stopBId: tram.stopBId,
       startTime: Date.now(),
+      etaAtConfirmation: tram.eta,
       points: [],
     }
   }, [])
