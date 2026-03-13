@@ -42,21 +42,24 @@ L.Icon.Default.mergeOptions({
 
 function useFetchSegmentGraphs(segmentKeys: string[]): Map<string, AveragedGraph> {
   const [graphs, setGraphs] = useState<Map<string, AveragedGraph>>(new Map())
-  const prevKeysRef = useRef<string>('')
+  const fetchedKeysRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (segmentKeys.length === 0) return
-    const keysStr = [...segmentKeys].sort().join(',')
-    if (keysStr === prevKeysRef.current) return
-    prevKeysRef.current = keysStr
+    const newKeys = segmentKeys.filter(k => !fetchedKeysRef.current.has(k))
+    if (newKeys.length === 0) return
 
+    const keysStr = newKeys.sort().join(',')
     fetch(`/api/segment-speeds?keys=${encodeURIComponent(keysStr)}`)
       .then(r => r.ok ? r.json() : null)
       .then((data: Record<string, AveragedGraph> | null) => {
         if (!data) return
-        const map = new Map<string, AveragedGraph>()
-        for (const [k, v] of Object.entries(data)) map.set(k, v)
-        setGraphs(map)
+        for (const k of newKeys) fetchedKeysRef.current.add(k)
+        setGraphs(prev => {
+          const next = new Map(prev)
+          for (const [k, v] of Object.entries(data)) next.set(k, v)
+          return next
+        })
       })
       .catch(() => { /* ignore */ })
   }, [segmentKeys])
