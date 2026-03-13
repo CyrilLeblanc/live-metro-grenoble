@@ -1,5 +1,17 @@
+/**
+ * GET /api/trams
+ *
+ * Aggregates real-time departure data from the Métromobilité API across every
+ * stop cluster and computes the interpolated position of each tram currently
+ * in transit. Returns an array of TramPosition objects for the client to render.
+ *
+ * Stale-cache fallback: if all upstream requests fail, the last successful
+ * response is returned so the map does not go blank during a brief API outage.
+ */
+
 import { interpolatePosition } from '../../../lib/interpolator'
-import { loadRoutes, loadTrips, loadShapes, loadStops, loadStopTimes, Route, Stop, Trip, StopTime, ShapePoint } from '../../../lib/gtfs'
+import { loadRoutes, loadTrips, loadShapes, loadStops, loadStopTimes, getClusterId, Route, Stop, Trip, StopTime, ShapePoint } from '../../../lib/gtfs'
+import { UPSTREAM_API_BASE } from '../../../lib/config'
 
 interface GtfsIndex {
   stopById: Map<string, Stop>
@@ -26,6 +38,7 @@ export interface TramPosition {
   stopBId: string
 }
 
+// Module-level cache: GTFS data is large and static — build once per server process.
 let gtfsIndex: GtfsIndex | null = null
 let lastGoodResponse: TramPosition[] | null = null
 
@@ -80,11 +93,12 @@ async function buildGtfsIndex(): Promise<GtfsIndex> {
   for (const pts of shapeByShapeId.values())
     pts.sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence)
 
+  // Collect the unique cluster ID for every stop referenced in the schedule
   const clusterIdSet = new Set<string>()
   for (const st of stopTimes) {
     const stop = stopById.get(st.stop_id)
     if (!stop) continue
-    clusterIdSet.add(stop.parent_station || stop.stop_id)
+    clusterIdSet.add(getClusterId(stop))
   }
   const activeClusterIds = [...clusterIdSet]
 
@@ -109,9 +123,10 @@ export async function GET() {
   }
   type UpstreamGroup = { pattern: { id: string; desc: string }; times: UpstreamTime[] }
 
+  // Fan out to all active clusters in parallel; failures are silently ignored via allSettled
   const settled = await Promise.allSettled(
     index.activeClusterIds.map(id =>
-      fetch(`https://data.mobilites-m.fr/api/routers/default/index/clusters/SEM:GEN${id}/stoptimes`, {
+      fetch(`${UPSTREAM_API_BASE}/routers/default/index/clusters/SEM:GEN${id}/stoptimes`, {
         headers: { Origin: 'http://localhost:3000' },
       })
         .then(r => {
@@ -192,10 +207,12 @@ export async function GET() {
   }
 
   if (results.length > 0) {
+    // Cache for stale-fallback on next failure
     lastGoodResponse = results
     return Response.json(results)
   }
 
+  // Stale-cache fallback: return last known positions when upstream is unavailable
   if (lastGoodResponse) {
     return Response.json(lastGoodResponse)
   }

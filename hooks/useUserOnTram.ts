@@ -4,14 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import React from 'react'
 import { haversineDistance, makeSegmentKey } from '../lib/geo'
 import { TramApiItem, TramPosition } from './useAnimatedTrams'
-
-const NEARBY_THRESHOLD_M = 80
-const AUTODECONFIRM_THRESHOLD_M = 150
-const AUTODECONFIRM_FIXES = 20
-const MAX_ACCURACY_M = 50
-const MAX_SPEED_MS = 10
-const GPS_HISTORY = 30
-const SPEED_WINDOW_SEC = 10
+import {
+  NEARBY_THRESHOLD_M,
+  AUTODECONFIRM_THRESHOLD_M,
+  AUTODECONFIRM_FIXES,
+  MAX_ACCURACY_M,
+  MAX_SPEED_MS,
+  GPS_HISTORY,
+  SPEED_WINDOW_SEC,
+} from '../lib/config'
 
 interface GpsPoint {
   lat: number
@@ -169,6 +170,8 @@ export function useUserOnTram(
     }
 
     if (rawSpeed !== null && rawSpeed <= MAX_SPEED_MS) {
+      // Exponentially-weighted moving average: 40% new reading, 60% history.
+      // Smooths out GPS jitter while still responding to genuine speed changes.
       const prev = ewmaSpeedRef.current ?? rawSpeed
       const smoothed = 0.4 * rawSpeed + 0.6 * prev
       ewmaSpeedRef.current = smoothed
@@ -181,7 +184,8 @@ export function useUserOnTram(
       setNearbyTrams(nearby)
     }
 
-    // Auto-deconfirm check
+    // Auto-deconfirm: if the user is consistently far from their tram for
+    // AUTODECONFIRM_FIXES consecutive fixes, they've likely left the tram.
     if (isConfirmedRef.current && userTramIdRef.current) {
       const tram = apiTramsRef.current.find(t => t.id === userTramIdRef.current)
       if (tram) {

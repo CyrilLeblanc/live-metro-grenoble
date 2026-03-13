@@ -1,4 +1,4 @@
-export const RAD = Math.PI / 180
+const RAD = Math.PI / 180
 
 export function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000

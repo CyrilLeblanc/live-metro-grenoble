@@ -1,3 +1,5 @@
+import { UPSTREAM_API_BASE } from '../../../lib/config'
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const stopId = searchParams.get('stopId');
@@ -11,7 +13,7 @@ export async function GET(request: Request) {
   let upstream: Response;
   try {
     upstream = await fetch(
-      `https://data.mobilites-m.fr/api/routers/default/index/clusters/${stopId}/stoptimes`,
+      `${UPSTREAM_API_BASE}/routers/default/index/clusters/${stopId}/stoptimes`,
       { headers: { Origin: origin } }
     );
   } catch {

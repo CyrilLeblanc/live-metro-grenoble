@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { appendSpeedGraph, getAveragedGraphs, makeSegmentKey } from '../../../lib/segmentSpeeds'
+import { MAX_SEGMENT_SPEED_MS } from '../../../lib/config'
 
 export async function POST(req: NextRequest) {
   let body: { stopAId: string; stopBId: string; totalDurationSec: number; points: Array<{ tSec: number; speedMs: number }> }
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'invalid body' }, { status: 400 })
   }
 
-  const invalidSpeed = points.some(p => typeof p.speedMs !== 'number' || p.speedMs < 0 || p.speedMs > 10)
+  const invalidSpeed = points.some(p => typeof p.speedMs !== 'number' || p.speedMs < 0 || p.speedMs > MAX_SEGMENT_SPEED_MS)
   if (invalidSpeed) {
     return Response.json({ error: 'speed out of range' }, { status: 400 })
   }
