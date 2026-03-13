@@ -38,6 +38,21 @@ export function findProgressOnPath(path: LatLng[], lengths: number[], pos: LatLn
 }
 
 /**
+ * Returns the bearing (degrees) of travel at a given distance `progress` along `path`,
+ * by looking `lookaheadMeters` ahead. Used to rotate tram sprites in the direction they
+ * are actually moving rather than using the stale API-reported bearing.
+ */
+export function bearingAtProgress(path: LatLng[], lengths: number[], progress: number, lookaheadMeters = 15): number {
+  const total = lengths[lengths.length - 1] ?? 0
+  const aheadProgress = Math.min(progress + lookaheadMeters, total)
+  const from = positionAtProgress(path, lengths, progress)
+  const to = positionAtProgress(path, lengths, aheadProgress)
+  const dLat = to.lat - from.lat
+  const dLon = to.lng - from.lng
+  return (Math.atan2(dLon, dLat) * 180) / Math.PI
+}
+
+/**
  * Returns the interpolated lat/lng on `path` at a given distance `progress` (metres).
  *
  * Walks the cumulative-distance array to find the segment containing `progress`,

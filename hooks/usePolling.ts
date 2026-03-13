@@ -72,7 +72,6 @@ export function usePolling(dataLoaded: boolean): PollingData {
           eta: formatEta(item.eta),
           isRealtime: item.isRealtime,
           color: item.lineColor.replace('#', ''),
-          bearing: item.bearing,
         })))
       } finally {
         pollingInFlightRef.current = false

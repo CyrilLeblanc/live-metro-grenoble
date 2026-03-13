@@ -26,7 +26,6 @@ export interface TramPosition {
   id: string
   lat: number
   lng: number
-  bearing: number
   line: string
   lineColor: string
   direction: string
@@ -106,8 +105,12 @@ async function buildGtfsIndex(): Promise<GtfsIndex> {
 }
 
 export async function GET() {
+  const t0 = Date.now()
+
   if (!gtfsIndex) {
+    const tGtfs = Date.now()
     gtfsIndex = await buildGtfsIndex()
+    console.log(`[trams] gtfs index built in ${Date.now() - tGtfs}ms`)
   }
   const index = gtfsIndex
   const now = Date.now() / 1000
@@ -124,17 +127,36 @@ export async function GET() {
   type UpstreamGroup = { pattern: { id: string; desc: string }; times: UpstreamTime[] }
 
   // Fan out to all active clusters in parallel; failures are silently ignored via allSettled
+  const CLUSTER_TIMEOUT_MS = 3000
+  const tFetch = Date.now()
   const settled = await Promise.allSettled(
-    index.activeClusterIds.map(id =>
-      fetch(`${UPSTREAM_API_BASE}/routers/default/index/clusters/SEM:GEN${id}/stoptimes`, {
+    index.activeClusterIds.map(id => {
+      const tCluster = Date.now()
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), CLUSTER_TIMEOUT_MS)
+      return fetch(`${UPSTREAM_API_BASE}/routers/default/index/clusters/SEM:GEN${id}/stoptimes`, {
         headers: { Origin: 'http://localhost:3000' },
+        signal: controller.signal,
       })
         .then(r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           return r.json() as Promise<UpstreamGroup[]>
         })
-    )
+        .then(data => {
+          const elapsed = Date.now() - tCluster
+          if (elapsed > 2000) console.warn(`[trams] slow cluster ${id}: ${elapsed}ms`)
+          return data
+        })
+        .catch(err => {
+          console.error(`[trams] cluster ${id} failed after ${Date.now() - tCluster}ms:`, err.message)
+          throw err
+        })
+        .finally(() => clearTimeout(timer))
+    })
   )
+  const nOk = settled.filter(s => s.status === 'fulfilled').length
+  const nFail = settled.length - nOk
+  console.log(`[trams] upstream fetch: ${Date.now() - tFetch}ms (${nOk}/${settled.length} ok, ${nFail} failed)`)
 
   for (const outcome of settled) {
     if (outcome.status === 'rejected') continue
@@ -182,15 +204,11 @@ export async function GET() {
 
         if (pos) {
           seenTrips.add(tripId)
-          const dLat = stopB.stop_lat - pos.lat
-          const dLon = stopB.stop_lon - pos.lng
-          const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI
           const shapePath = extractShapeSegment(shape, stopA, stopB)
           results.push({
             id: `${tripId}-${stopIdx}`,
             lat: pos.lat,
             lng: pos.lng,
-            bearing,
             line: route.route_short_name,
             lineColor: `#${route.route_color}`,
             direction: headsign,
@@ -205,6 +223,8 @@ export async function GET() {
       }
     }
   }
+
+  console.log(`[trams] total: ${Date.now() - t0}ms, trams found: ${results.length}`)
 
   if (results.length > 0) {
     // Cache for stale-fallback on next failure

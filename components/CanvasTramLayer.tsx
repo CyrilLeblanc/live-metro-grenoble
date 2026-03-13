@@ -12,7 +12,6 @@ export interface TramMarkerData {
   eta: string
   isRealtime: boolean
   color: string
-  bearing: number
 }
 
 interface Props {

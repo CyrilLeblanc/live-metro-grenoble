@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react'
 import { haversineDistance, makeSegmentKey, AveragedGraph } from '../lib/geo'
 import { DECEL_THRESHOLD, MAX_SPEED } from '../lib/config'
 import { interpolateSpeed } from '../lib/speedUtils'
-import { buildPathLengths, findProgressOnPath, positionAtProgress } from '../lib/pathUtils'
+import { buildPathLengths, findProgressOnPath, positionAtProgress, bearingAtProgress } from '../lib/pathUtils'
 
 interface LatLng { lat: number; lng: number }
 
@@ -11,7 +11,6 @@ export interface TramApiItem {
   lat: number
   lng: number
   eta: number
-  bearing: number
   shapePath: LatLng[]
   stopAId: string
   stopBId: string
@@ -43,7 +42,6 @@ interface TramAnimState {
   /** API-reported lat/lng at the last update, used to derive speed from displacement. */
   apiLat: number
   apiLng: number
-  bearing: number
   segmentKey: string
 }
 
@@ -79,7 +77,7 @@ export function useAnimatedTrams(
     for (const item of apiTrams) {
       // Always write initial API position so trams without shape paths still appear
       if (!positionsRef.current.has(item.id)) {
-        positionsRef.current.set(item.id, { lat: item.lat, lng: item.lng, bearing: item.bearing })
+        positionsRef.current.set(item.id, { lat: item.lat, lng: item.lng, bearing: 0 })
       }
 
       if (!item.shapePath || item.shapePath.length < 2) continue
@@ -119,7 +117,6 @@ export function useAnimatedTrams(
         updateTime: now,
         apiLat: item.lat,
         apiLng: item.lng,
-        bearing: item.bearing,
         segmentKey: makeSegmentKey(item.stopAId, item.stopBId),
       })
     }
@@ -166,7 +163,8 @@ export function useAnimatedTrams(
         state.progressMeters = Math.min(state.progressMeters + moveDist, state.totalLength)
 
         const pos = positionAtProgress(state.path, state.pathLengths, state.progressMeters)
-        positionsRef.current.set(id, { lat: pos.lat, lng: pos.lng, bearing: state.bearing })
+        const bearing = bearingAtProgress(state.path, state.pathLengths, state.progressMeters)
+        positionsRef.current.set(id, { lat: pos.lat, lng: pos.lng, bearing })
       }
       rafRef.current = requestAnimationFrame(frame)
     }
