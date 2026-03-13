@@ -8,6 +8,64 @@ Interactive Leaflet map showing live tram positions for lines A–E. Because Mé
 
 Between API refreshes (~10s), tram markers are animated client-side: each tram continues moving from its current animated position along the path at an estimated speed. If GPS speed graphs are available for a segment (contributed by users on board), animation uses the averaged real-world speed profile instead of a flat estimate.
 
+## How it works
+
+### Tram position pipeline
+
+```
+Métromobilité API (stop-time departures)
+  → /api/trams  (server, every 10 s)
+    → for each active stop cluster: fetch upcoming departures
+    → for each departure: find the tram's current position on its GTFS shape
+    → return { lat, lng, eta, shapePath, stopAId, stopBId, … } per tram
+  → usePolling  (client)
+    → feeds TramPosition objects into useAnimatedTrams
+```
+
+### Position interpolation (`lib/interpolator.ts`)
+
+Each tram is known to be between **stop A** (just departed) and **stop B** (next stop, arriving in `eta` seconds). The server uses the GTFS shape polyline to find where along the path the tram should be right now:
+
+1. Build the cumulative length array for the shape segment between A and B
+2. Compute `ratio = elapsed / totalDuration` (0 = just left A, 1 = arrived at B)
+3. Walk the polyline to the point at `ratio × totalLength`
+
+This gives a lat/lng on the actual track geometry, not a straight-line guess.
+
+### Client-side animation (`hooks/useAnimatedTrams.ts`)
+
+The API only updates every 10 seconds. Between updates, trams are animated at ~60 fps using `requestAnimationFrame`:
+
+1. On each API update, record the tram's position on the path as `progressMeters` and the estimated speed (derived from displacement between consecutive API positions)
+2. Each frame: advance `progressMeters += speedMs × dt`
+3. Near the next stop (within the last few seconds of `eta`), apply a linear deceleration factor so trams don't overshoot
+
+Speed source priority (highest wins):
+1. **Live GPS override** — if the current user confirmed they're on that tram
+2. **Averaged segment graph** — community speed recordings for that stop pair
+3. **API-estimated speed** — displacement ÷ elapsed time between the last two poll responses
+
+### GPS speed recording (`hooks/useUserOnTram.ts`)
+
+When a user confirms they're on a tram, the app opens a **segment buffer**:
+
+- Every GPS fix appends `{ tSec, speedMs }` where `tSec` = seconds remaining until the next stop (i.e. the API's `eta` at confirmation minus elapsed time since confirmation)
+- `speedMs` is an EWMA-smoothed speed computed over a 10-second rolling GPS window
+- When the tram crosses a stop (its API ID changes), the buffer is finalised: points are reversed to ascending `tSec` order and POSTed to `/api/segment-speeds`
+
+Recording `tSec` as "seconds until stop B" ensures recordings made mid-segment (user boards partway through) are correctly anchored — they start near the actual remaining time rather than at zero.
+
+### Segment speed averaging (`lib/segmentSpeeds.ts`)
+
+Up to 10 recordings per stop pair are kept on disk (JSONL). On each GET request the server:
+
+1. Reads all recordings for the requested segment keys
+2. Grids each recording onto a 2-second time axis (0 → `totalDurationSec`)
+3. Averages the speed values across recordings at each grid point
+4. Returns the averaged `[{ tSec, speedMs }]` array
+
+The animation hook then calls `interpolateSpeed(graph.points, currentEta)` to look up the expected speed at the tram's current position in the segment.
+
 ## Prerequisites
 
 - Node.js v24 (see `.nvmrc`; use [nvm](https://github.com/nvm-sh/nvm) if needed)
