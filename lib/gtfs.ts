@@ -99,6 +99,15 @@ export async function loadStopTimes(): Promise<StopTime[]> {
   return stopTimesCache;
 }
 
+/**
+ * Returns the cluster ID for a stop: its parent station if it has one,
+ * or the stop's own ID for standalone stops. Consistent with the TAG API's
+ * `SEM:GEN{clusterId}` cluster addressing.
+ */
+export function getClusterId(stop: Stop): string {
+  return stop.parent_station || stop.stop_id
+}
+
 export async function loadShapes(): Promise<ShapePoint[]> {
   if (shapesCache) return shapesCache;
   const raw = await loadJson<Record<string, { lat: string; lon: string; sequence: number }[]>>('shapes.json');

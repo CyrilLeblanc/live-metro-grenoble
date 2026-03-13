@@ -4,14 +4,17 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
-import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, Route, ShapePoint, Stop } from '../lib/gtfs'
-import { useAnimatedTrams, TramApiItem } from '../hooks/useAnimatedTrams'
-import { useUserOnTram } from '../hooks/useUserOnTram'
 import { makeSegmentKey, AveragedGraph } from '../lib/geo'
+import { GRENOBLE_CENTER, GRENOBLE_BOUNDS } from '../lib/config'
+import { useGtfsData } from '../hooks/useGtfsData'
+import { usePolling } from '../hooks/usePolling'
+import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
+import { useUserOnTram } from '../hooks/useUserOnTram'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
 import CanvasTramLayer, { TramMarkerData } from './CanvasTramLayer'
 import OnTramOverlay from './OnTramOverlay'
+import { Stop } from '../lib/gtfs'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   useMapEvents({ click: () => onMapClick() })
@@ -36,18 +39,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
-
-const GRENOBLE_CENTER: [number, number] = [45.1885, 5.7245]
-const GRENOBLE_BOUNDS: [[number, number], [number, number]] = [
-  [44.95, 5.45], // SW
-  [45.45, 6.05], // NE
-]
-
-function formatEta(secs: number): string {
-  if (secs <= 0) return 'arriving'
-  const mins = Math.round(secs / 60)
-  return mins < 1 ? '< 1 min' : `in ${mins} min`
-}
 
 function useFetchSegmentGraphs(segmentKeys: string[]): Map<string, AveragedGraph> {
   const [graphs, setGraphs] = useState<Map<string, AveragedGraph>>(new Map())
@@ -74,26 +65,20 @@ function useFetchSegmentGraphs(segmentKeys: string[]): Map<string, AveragedGraph
 }
 
 export default function TramMap() {
-  const [lineShapes, setLineShapes] = useState<Array<{ route: Route; points: ShapePoint[] }>>([])
-  const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
-  const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
-  const [apiTrams, setApiTrams] = useState<TramApiItem[]>([])
-  const [dataLoaded, setDataLoaded] = useState(false)
-  const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
-  const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
-  const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [zoom, setZoom] = useState(13)
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
+  const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
   const [popupTram, setPopupTram] = useState<{ id: string; x: number; y: number; data: TramMarkerData } | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
-  const [secondsLeft, setSecondsLeft] = useState(10)
-  const pollingInFlightRef = useRef(false)
-  const tickRef = useRef<(() => Promise<void>) | null>(null)
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Segment graphs for animation
+  // Load static GTFS data (routes, stops, shapes)
+  const { lineShapes, tramStops, tramRouteIds, routeColorMap, dataLoaded } = useGtfsData()
+
+  // Poll real-time tram positions every 10 seconds
+  const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded)
+
+  // Segment graphs for animation refinement
   const segmentKeys = useMemo(
     () => [...new Set(apiTrams.map(t => makeSegmentKey(t.stopAId, t.stopBId)))],
     [apiTrams],
@@ -125,144 +110,10 @@ export default function TramMap() {
 
   const positionsRef = useAnimatedTrams(apiTrams, segmentGraphs, speedOverrides)
 
-  // Keep placeholder ref in sync so useUserOnTram gets real positions
+  // Keep placeholder ref in sync so useUserOnTram gets real animated positions
   useEffect(() => {
     positionsPlaceholderRef.current = positionsRef.current ?? new Map()
   })
-
-  function resetTimers() {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-    setSecondsLeft(10)
-    countdownIntervalRef.current = setInterval(() => {
-      setSecondsLeft(s => Math.max(0, s - 1))
-    }, 1_000)
-    pollIntervalRef.current = setInterval(() => {
-      tickRef.current?.()
-    }, 10_000)
-  }
-
-  useEffect(() => {
-    async function load() {
-      const [routes, trips, shapes, stops, stopTimes] = await Promise.all([
-        loadRoutes(), loadTrips(), loadShapes(), loadStops(), loadStopTimes()
-      ])
-
-      const shapeMap = new Map<string, ShapePoint[]>()
-      for (const pt of shapes) {
-        if (!shapeMap.has(pt.shape_id)) shapeMap.set(pt.shape_id, [])
-        shapeMap.get(pt.shape_id)!.push(pt)
-      }
-      for (const pts of shapeMap.values()) pts.sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence)
-
-      const routeShapeIds = new Map<string, Set<string>>()
-      for (const trip of trips) {
-        if (!routeShapeIds.has(trip.route_id)) routeShapeIds.set(trip.route_id, new Set())
-        routeShapeIds.get(trip.route_id)!.add(trip.shape_id)
-      }
-
-      const result: Array<{ route: Route; points: ShapePoint[] }> = []
-      for (const route of routes) {
-        for (const shapeId of routeShapeIds.get(route.route_id) ?? []) {
-          const pts = shapeMap.get(shapeId)
-          if (pts) result.push({ route, points: pts })
-        }
-      }
-      setLineShapes(result.reverse())
-      setTramRouteIds(new Set(routes.map(r => r.route_id)))
-
-      const tripRouteMap = new Map<string, string>()
-      for (const trip of trips) tripRouteMap.set(trip.trip_id, trip.route_id)
-
-      const routeColorMap = new Map<string, string>()
-      for (const route of routes) routeColorMap.set(route.route_id, route.route_color)
-      setRouteColorMap(routeColorMap)
-
-      const stopById = new Map<string, Stop>()
-      for (const stop of stops) stopById.set(stop.stop_id, stop)
-
-      // Group tram stops by cluster (parent_station)
-      type ClusterEntry = { stop_id: string; stop_name: string; lat: number; lon: number; colors: Set<string> }
-      const clusterMap = new Map<string, ClusterEntry>()
-
-      for (const st of stopTimes) {
-        const routeId = tripRouteMap.get(st.trip_id)
-        if (!routeId) continue
-        const color = routeColorMap.get(routeId)
-        if (!color) continue
-
-        const stop = stopById.get(st.stop_id)
-        if (!stop) continue
-
-        const clusterId = stop.parent_station || stop.stop_id
-        if (!clusterMap.has(clusterId)) {
-          clusterMap.set(clusterId, { stop_id: clusterId, stop_name: stop.stop_name, lat: 0, lon: 0, colors: new Set() })
-        }
-        clusterMap.get(clusterId)!.colors.add(color)
-      }
-
-      // Compute centroid for each cluster
-      const clusterStops = new Map<string, Stop[]>()
-      for (const stop of stops) {
-        const clusterId = stop.parent_station || stop.stop_id
-        if (!clusterStops.has(clusterId)) clusterStops.set(clusterId, [])
-        clusterStops.get(clusterId)!.push(stop)
-      }
-
-      const tramClusters: Array<{ stop: Stop; color: string }> = []
-      for (const [clusterId, entry] of clusterMap) {
-        const members = clusterStops.get(clusterId) ?? []
-        const lat = members.reduce((s, m) => s + m.stop_lat, 0) / members.length
-        const lon = members.reduce((s, m) => s + m.stop_lon, 0) / members.length
-        const color = entry.colors.size === 1 ? [...entry.colors][0] : 'aaaaaa'
-        tramClusters.push({
-          stop: { stop_id: clusterId, stop_name: entry.stop_name, stop_lat: lat, stop_lon: lon, parent_station: '' },
-          color,
-        })
-      }
-      setTramStops(tramClusters)
-
-      setDataLoaded(true)
-    }
-    load()
-  }, [])
-
-  useEffect(() => {
-    if (!dataLoaded) return
-
-    async function tick() {
-      if (pollingInFlightRef.current) return
-      pollingInFlightRef.current = true
-      try {
-        const res = await fetch('/api/trams')
-        if (!res.ok) return
-        const data: TramApiItem[] = await res.json()
-        setApiTrams(data)
-        setTramMarkers(data.map(item => ({
-          id: item.id,
-          position: [item.lat, item.lng] as [number, number],
-          line: item.line,
-          direction: item.direction,
-          nextStop: item.nextStop,
-          eta: formatEta(item.eta),
-          isRealtime: item.isRealtime,
-          color: item.lineColor.replace('#', ''),
-          bearing: item.bearing,
-        })))
-      } finally {
-        pollingInFlightRef.current = false
-      }
-      resetTimers()
-    }
-
-    tickRef.current = tick
-    tick()
-
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-    }
-  }, [dataLoaded])
 
   return (
     <div style={{ height: '100vh', position: 'relative' }}>
@@ -271,7 +122,7 @@ export default function TramMap() {
              className="flex items-center gap-2 rounded px-2 py-1 text-sm shadow font-medium w-fit">
           <span style={{ color: 'rgba(255,255,255,0.6)' }}>{secondsLeft}s</span>
           <button
-            onClick={() => tickRef.current?.()}
+            onClick={refresh}
             className="flex items-center justify-center"
             style={{ color: '#96dbeb' }}
             title="Force reload"

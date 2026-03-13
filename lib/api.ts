@@ -1,4 +1,4 @@
-export interface StopTimeEntry {
+interface StopTimeEntry {
   stopId: string
   tripId: string
   scheduledDeparture: number  // seconds from midnight
@@ -7,7 +7,7 @@ export interface StopTimeEntry {
   realtime: boolean
 }
 
-export interface PatternGroup {
+interface PatternGroup {
   pattern: { id: string; desc: string }
   times: StopTimeEntry[]
 }

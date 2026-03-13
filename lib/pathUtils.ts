@@ -1,0 +1,60 @@
+import { haversineDistance } from './geo'
+
+interface LatLng { lat: number; lng: number }
+
+/**
+ * Builds a cumulative-distance array for a polyline path.
+ *
+ * `lengths[i]` is the total metres from `path[0]` to `path[i]`.
+ * `lengths[0]` is always 0. Uses the Haversine formula for accuracy.
+ *
+ * @returns `{ lengths, total }` where `total` is the full path length in metres.
+ */
+export function buildPathLengths(path: LatLng[]): { lengths: number[]; total: number } {
+  const lengths = [0]
+  for (let i = 1; i < path.length; i++) {
+    lengths.push(lengths[i - 1] + haversineDistance(path[i - 1].lat, path[i - 1].lng, path[i].lat, path[i].lng))
+  }
+  return { lengths, total: lengths[lengths.length - 1] ?? 0 }
+}
+
+/**
+ * Finds the cumulative distance along `path` of the point nearest to `pos`.
+ *
+ * Used to map an API-reported lat/lng back onto the animation path so the
+ * tram can smoothly continue from its animated position after each API update.
+ */
+export function findProgressOnPath(path: LatLng[], lengths: number[], pos: LatLng): number {
+  let bestDist = Infinity
+  let bestProgress = 0
+  for (let i = 0; i < path.length; i++) {
+    const d = haversineDistance(pos.lat, pos.lng, path[i].lat, path[i].lng)
+    if (d < bestDist) {
+      bestDist = d
+      bestProgress = lengths[i]
+    }
+  }
+  return bestProgress
+}
+
+/**
+ * Returns the interpolated lat/lng on `path` at a given distance `progress` (metres).
+ *
+ * Walks the cumulative-distance array to find the segment containing `progress`,
+ * then linearly interpolates between its two endpoints.
+ */
+export function positionAtProgress(path: LatLng[], lengths: number[], progress: number): LatLng {
+  if (path.length === 0) return { lat: 0, lng: 0 }
+  if (path.length === 1) return path[0]
+  for (let i = 1; i < path.length; i++) {
+    if (lengths[i] >= progress || i === path.length - 1) {
+      const segLen = lengths[i] - lengths[i - 1]
+      const t = segLen === 0 ? 0 : Math.min(1, (progress - lengths[i - 1]) / segLen)
+      return {
+        lat: path[i - 1].lat + t * (path[i].lat - path[i - 1].lat),
+        lng: path[i - 1].lng + t * (path[i].lng - path[i - 1].lng),
+      }
+    }
+  }
+  return path[path.length - 1]
+}

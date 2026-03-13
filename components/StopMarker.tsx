@@ -2,8 +2,7 @@
 import { CircleMarker, Marker } from 'react-leaflet'
 import L from 'leaflet'
 import { Stop } from '../lib/gtfs'
-
-const SVG_THRESHOLD = 14
+import { SVG_THRESHOLD } from '../lib/config'
 
 interface Props {
   stop: Stop

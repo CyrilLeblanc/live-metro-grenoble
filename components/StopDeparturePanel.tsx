@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Stop } from '../lib/gtfs'
-import { fetchStopTimes, PatternGroup, StopTimeEntry } from '../lib/api'
+import { fetchStopTimes } from '../lib/api'
 
 interface Props {
   stop: Stop

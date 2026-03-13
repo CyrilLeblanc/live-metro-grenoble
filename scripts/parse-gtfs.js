@@ -6,7 +6,9 @@ const path = require('path');
 const os = require('os');
 const AdmZip = require('adm-zip');
 
-const GTFS_URL = 'https://data.mobilites-m.fr/api/gtfs/SEM';
+// Base URL matches UPSTREAM_API_BASE in lib/config.ts — keep in sync if the API changes.
+const UPSTREAM_API_BASE = 'https://data.mobilites-m.fr/api';
+const GTFS_URL = `${UPSTREAM_API_BASE}/gtfs/SEM`;
 const OUT_DIR = path.join(__dirname, '..', 'public', 'gtfs');
 const TMP_ZIP = path.join(os.tmpdir(), 'gtfs.zip');
 

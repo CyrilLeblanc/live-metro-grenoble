@@ -1,3 +1,18 @@
+/**
+ * Position interpolation along a GTFS shape polyline.
+ *
+ * Given two consecutive stops (A → B) with their scheduled times, and the
+ * vehicle's shape geometry, this module computes where the vehicle should be
+ * at any given moment between those stops.
+ *
+ * Algorithm:
+ *  1. Compute a time-based progress ratio (0 at A, 1 at B).
+ *  2. Slice the shape polyline between the nearest shape points to A and B.
+ *  3. Build cumulative arc lengths along that slice.
+ *  4. Interpolate a position at `ratio * totalLength` along the slice.
+ *  5. Fall back to linear interpolation between A and B if no shape is available.
+ */
+
 export interface LatLng { lat: number; lng: number }
 
 interface ShapePoint { lat: number; lon: number }
@@ -6,9 +21,16 @@ interface InterpolateParams {
   currentTime: number   // Unix seconds
   stopA: { lat: number; lng: number; time: number }
   stopB: { lat: number; lng: number; time: number }
-  shape?: ShapePoint[]  // ordered between A and B
+  shape?: ShapePoint[]  // ordered shape points between A and B
 }
 
+/**
+ * Simple Euclidean distance in degrees — intentionally not Haversine.
+ *
+ * Used only for finding the nearest shape point to a stop coordinate.
+ * Degree-based distance is sufficient here because we only need a relative
+ * nearest-neighbour comparison, not an accurate distance in metres.
+ */
 function dist(a: { lat: number; lng: number } | { lat: number; lon: number }, b: { lat: number; lng: number } | { lat: number; lon: number }): number {
   const aLng = 'lng' in a ? a.lng : a.lon;
   const bLng = 'lng' in b ? b.lng : b.lon;
@@ -55,7 +77,7 @@ export function interpolatePosition(params: InterpolateParams): LatLng | null {
         { lat: stopB.lat, lng: stopB.lng },
       ];
 
-      // Cumulative arc lengths
+      // Cumulative arc lengths (degree-based, consistent with dist() above)
       const lengths: number[] = [0];
       for (let i = 1; i < path.length; i++) {
         lengths.push(lengths[i - 1] + dist(path[i - 1], path[i]));
@@ -78,26 +100,9 @@ export function interpolatePosition(params: InterpolateParams): LatLng | null {
     }
   }
 
-  // Linear fallback
+  // Linear fallback when no shape data is available
   return {
     lat: stopA.lat + ratio * (stopB.lat - stopA.lat),
     lng: stopA.lng + ratio * (stopB.lng - stopA.lng),
   };
-}
-
-export function gtfsTimeToUnix(gtfsTime: string, serviceDate: Date): number {
-  const [hStr, mStr, sStr] = gtfsTime.split(':');
-  const hours = parseInt(hStr, 10);
-  const minutes = parseInt(mStr, 10);
-  const seconds = parseInt(sStr, 10);
-  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-
-  // Midnight UTC of serviceDate
-  const midnight = Date.UTC(
-    serviceDate.getUTCFullYear(),
-    serviceDate.getUTCMonth(),
-    serviceDate.getUTCDate(),
-  );
-
-  return Math.floor(midnight / 1000) + totalSeconds;
 }
