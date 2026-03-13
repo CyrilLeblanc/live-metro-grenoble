@@ -73,7 +73,7 @@ export async function GET(
     .then(() => fs.writeFile(cacheFile, tileBuffer))
     .catch(() => {})
 
-  return new Response(tileBuffer, {
+  return new Response(tileBuffer as unknown as BodyInit, {
     status: 200,
     headers: {
       'Content-Type': 'image/png',
