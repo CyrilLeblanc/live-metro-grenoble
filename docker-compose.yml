@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - tile-cache:/app/.cache/tiles
+      - segment-speeds:/app/data/segment-speeds
+
+volumes:
+  tile-cache:
+  segment-speeds:
