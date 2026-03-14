@@ -39,10 +39,10 @@ function dist(a: { lat: number; lng: number } | { lat: number; lon: number }, b:
   return Math.sqrt(dLat * dLat + dLng * dLng);
 }
 
-function nearestIndex(shape: ShapePoint[], target: { lat: number; lng: number }): number {
-  let best = 0;
+function nearestIndex(shape: ShapePoint[], target: { lat: number; lng: number }, startFrom = 0): number {
+  let best = startFrom;
   let bestDist = Infinity;
-  for (let i = 0; i < shape.length; i++) {
+  for (let i = startFrom; i < shape.length; i++) {
     const d = dist(shape[i], target);
     if (d < bestDist) {
       bestDist = d;
@@ -62,11 +62,9 @@ export function interpolatePosition(params: InterpolateParams): LatLng | null {
 
   if (shape && shape.length >= 2) {
     const iA = nearestIndex(shape, stopA);
-    const iB = nearestIndex(shape, stopB);
+    const iB = nearestIndex(shape, stopB, iA);
 
-    const start = Math.min(iA, iB);
-    const end = Math.max(iA, iB);
-    const slice = shape.slice(start, end + 1);
+    const slice = shape.slice(iA, iB + 1);
 
     if (slice.length >= 2) {
       // Build path: stopA anchor, shape slice, stopB anchor

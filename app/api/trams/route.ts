@@ -155,8 +155,12 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
         const stopB = index.stopById.get(stB.stop_id)
         if (!stopA || !stopB) continue
 
-        const [h, m, s] = stA.departure_time.split(':').map(Number)
-        const timeA = serviceDay + h * 3600 + m * 60 + s
+        const [hB, mB, sB] = stB.arrival_time.split(':').map(Number)
+        const scheduledArrivalB = serviceDay + hB * 3600 + mB * 60 + sB
+        const delaySeconds = (serviceDay + realtimeDeparture) - scheduledArrivalB
+
+        const [hA, mA, sA] = stA.departure_time.split(':').map(Number)
+        const timeA = serviceDay + hA * 3600 + mA * 60 + sA + delaySeconds
         const timeB = serviceDay + realtimeDeparture
 
         const shape = index.shapeByShapeId.get(trip.shape_id)
@@ -171,7 +175,7 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
         if (pos) {
           seenTrips.add(tripId)
           results.push({
-            id: `${tripId}-${stopIdx}`,
+            id: tripId,
             lat: pos.lat,
             lng: pos.lng,
             line: route.route_short_name,
