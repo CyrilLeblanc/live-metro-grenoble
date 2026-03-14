@@ -34,6 +34,32 @@ function MapController({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null
   return null
 }
 
+function parseHashPosition(): { center: [number, number]; zoom: number } | null {
+  if (typeof window === 'undefined') return null
+  const hash = window.location.hash.slice(1)
+  const parts = hash.split(',')
+  if (parts.length !== 3) return null
+  const lat = parseFloat(parts[0])
+  const lng = parseFloat(parts[1])
+  const zoom = parseInt(parts[2], 10)
+  if (isNaN(lat) || isNaN(lng) || isNaN(zoom)) return null
+  if (lat < 44.95 || lat > 45.45 || lng < 5.45 || lng > 6.05) return null
+  if (zoom < 10 || zoom > 18) return null
+  return { center: [lat, lng], zoom }
+}
+
+function MapPositionSync() {
+  useMapEvents({
+    moveend(e) {
+      const map = e.target as L.Map
+      const { lat, lng } = map.getCenter()
+      const z = map.getZoom()
+      window.location.hash = `${lat.toFixed(5)},${lng.toFixed(5)},${z}`
+    },
+  })
+  return null
+}
+
 // Fix Leaflet default marker icons broken by webpack
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -70,7 +96,10 @@ function useFetchSegmentGraphs(segmentKeys: string[]): Map<string, AveragedGraph
 }
 
 export default function TramMap() {
-  const [zoom, setZoom] = useState(13)
+  const [initialPosition] = useState(() => parseHashPosition())
+  const initialCenter = initialPosition?.center ?? GRENOBLE_CENTER
+  const initialZoom = initialPosition?.zoom ?? 13
+  const [zoom, setZoom] = useState(initialZoom)
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
   const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
   const [popupTram, setPopupTram] = useState<{ id: string; x: number; y: number; data: TramMarkerData } | null>(null)
@@ -141,8 +170,8 @@ export default function TramMap() {
         </div>
       )}
       <MapContainer
-        center={GRENOBLE_CENTER}
-        zoom={13}
+        center={initialCenter}
+        zoom={initialZoom}
         minZoom={10}
         maxZoom={18}
         maxBounds={GRENOBLE_BOUNDS}
@@ -170,6 +199,7 @@ export default function TramMap() {
         }} />
         <ZoomTracker onZoom={setZoom} />
         <MapController mapRef={mapRef} />
+        <MapPositionSync />
         {tramStops.map(({ stop, color }) => (
           <StopMarker
             key={stop.stop_id}
