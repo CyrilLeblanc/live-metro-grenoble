@@ -10,10 +10,12 @@ import { useGtfsData } from '../hooks/useGtfsData'
 import { usePolling } from '../hooks/usePolling'
 import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
 import { useUserOnTram } from '../hooks/useUserOnTram'
+import { useUserLocation } from '../hooks/useUserLocation'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
 import CanvasTramLayer, { TramMarkerData } from './CanvasTramLayer'
 import OnTramOverlay from './OnTramOverlay'
+import UserLocationMarker from './UserLocationMarker'
 import { Stop } from '../lib/gtfs'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
@@ -118,6 +120,9 @@ export default function TramMap() {
     positionsPlaceholderRef.current = positionsRef.current ?? new Map()
   })
 
+  // User's own location (auto-prompted on load)
+  const { position: userPosition, isPending: locationPending } = useUserLocation()
+
   return (
     <div style={{ height: '100vh', position: 'relative' }}>
       {dataLoaded && (
@@ -155,6 +160,9 @@ export default function TramMap() {
             pathOptions={{ color: `#${route.route_color}`, weight: 4 }}
           />
         ))}
+        {userPosition && (
+          <UserLocationMarker position={userPosition} isPending={locationPending} />
+        )}
         <MapClickHandler onMapClick={() => {
           if (stopClickedRef.current) { stopClickedRef.current = false; return }
           setSelectedStop(null)
