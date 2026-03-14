@@ -1,3 +1,22 @@
+import type { GtfsStaticBundle } from './gtfs'
+
+let gtfsStaticPromise: Promise<GtfsStaticBundle> | null = null
+
+export function fetchGtfsStatic(): Promise<GtfsStaticBundle> {
+  if (!gtfsStaticPromise) {
+    gtfsStaticPromise = fetch('/api/gtfs-static')
+      .then((res) => {
+        if (!res.ok) throw new Error(`gtfs-static fetch failed: ${res.status}`)
+        return res.json() as Promise<GtfsStaticBundle>
+      })
+      .catch((err) => {
+        gtfsStaticPromise = null
+        throw err
+      })
+  }
+  return gtfsStaticPromise
+}
+
 interface StopTimeEntry {
   stopId: string
   tripId: string

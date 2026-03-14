@@ -10,7 +10,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, loadSegmentPaths, getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
+import { getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
+import { fetchGtfsStatic } from '../lib/api'
 import { makeSegmentKey } from '../lib/geo'
 
 interface LatLng { lat: number; lng: number }
@@ -36,9 +37,8 @@ export function useGtfsData(): GtfsData {
 
   useEffect(() => {
     async function load() {
-      const [routes, trips, shapes, stops, stopTimes, segPaths] = await Promise.all([
-        loadRoutes(), loadTrips(), loadShapes(), loadStops(), loadStopTimes(), loadSegmentPaths()
-      ])
+      const { routes, trips, shapes, stops, stopTimes, segmentPaths: segPathsRaw } = await fetchGtfsStatic()
+      const segPaths = new Map(Object.entries(segPathsRaw))
 
       // --- Build shape map: shape_id → sorted ShapePoint[] ---
       const shapeMap = new Map<string, ShapePoint[]>()

@@ -30,6 +30,28 @@ export interface StopTime {
   departure_time: string;
 }
 
+// Client-stripped variants (smaller payload)
+export interface TripClient {
+  trip_id: string;
+  route_id: string;
+  shape_id: string;
+}
+
+export interface StopTimeClient {
+  trip_id: string;
+  stop_id: string;
+  stop_sequence: number;
+}
+
+export interface GtfsStaticBundle {
+  routes: Route[];
+  stops: Stop[];
+  trips: TripClient[];
+  stopTimes: StopTimeClient[];
+  shapes: ShapePoint[];
+  segmentPaths: Record<string, { lat: number; lng: number }[]>;
+}
+
 export interface ShapePoint {
   shape_id: string;
   shape_pt_lat: number;
