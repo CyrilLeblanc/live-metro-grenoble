@@ -53,6 +53,7 @@ export function useAnimatedTrams(
 ): React.RefObject<Map<string, TramPosition>> {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
   const positionsRef = useRef<Map<string, TramPosition>>(new Map())
+  const pathLengthsCacheRef = useRef<Map<string, { lengths: number[]; total: number }>>(new Map())
   const lastApiTimeRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
   const lastFrameTimeRef = useRef<number | null>(null)
@@ -95,7 +96,13 @@ export function useAnimatedTrams(
       if (!shapePath || shapePath.length < 2) continue
 
       const prev = animStateRef.current.get(item.id)
-      const { lengths, total } = buildPathLengths(shapePath)
+      const segKey = makeSegmentKey(item.stopAId, item.stopBId)
+      let cached = pathLengthsCacheRef.current.get(segKey)
+      if (!cached) {
+        cached = buildPathLengths(shapePath)
+        pathLengthsCacheRef.current.set(segKey, cached)
+      }
+      const { lengths, total } = cached
       const progress = findProgressOnPath(shapePath, lengths, { lat: item.lat, lng: item.lng })
 
       let speedMs: number
