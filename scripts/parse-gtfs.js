@@ -307,6 +307,106 @@ async function main() {
       arr.sort((a, b) => parseInt(a.stop_sequence, 10) - parseInt(b.stop_sequence, 10));
     }
 
+    // === OSM tram route geometry ===
+    const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+    const OVERPASS_QUERY = `[out:json][timeout:60];
+relation["route"="tram"]["network"="TAG"](44.95,5.45,45.45,6.05);
+(._;>;);
+out body;`;
+    const OSM_MATCH_DEG = 0.00045; // ~50 m
+
+    const osmSegments = {};
+    try {
+      console.log('Fetching OSM tram route geometry from Overpass...');
+      const osmRes = await fetch(OVERPASS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(OVERPASS_QUERY),
+      });
+      if (!osmRes.ok) throw new Error(`Overpass HTTP ${osmRes.status}`);
+      const osmData = await osmRes.json();
+
+      // Build lookup maps
+      const nodeById = {};
+      const wayNodesById = {};
+      for (const el of osmData.elements) {
+        if (el.type === 'node') nodeById[el.id] = el;
+        if (el.type === 'way') wayNodesById[el.id] = el.nodes;
+      }
+
+      const relations = osmData.elements.filter(e => e.type === 'relation');
+      let osmSegCount = 0;
+
+      for (const rel of relations) {
+        // a. Reconstruct ordered polyline by chaining way members
+        const wayMembers = rel.members.filter(m => m.type === 'way');
+        let polyline = null;
+        for (const wm of wayMembers) {
+          const nodeIds = wayNodesById[wm.ref];
+          if (!nodeIds) continue;
+          const wayPts = nodeIds.map(id => nodeById[id]).filter(Boolean).map(n => ({ lat: n.lat, lng: n.lon }));
+          if (!wayPts.length) continue;
+
+          if (!polyline) {
+            polyline = [...wayPts];
+          } else {
+            const lastPt = polyline[polyline.length - 1];
+            const distForward = Math.hypot(lastPt.lat - wayPts[0].lat, lastPt.lng - wayPts[0].lng);
+            const distReverse = Math.hypot(lastPt.lat - wayPts[wayPts.length - 1].lat, lastPt.lng - wayPts[wayPts.length - 1].lng);
+            if (distReverse < distForward) wayPts.reverse();
+            polyline.push(...wayPts.slice(1));
+          }
+        }
+        if (!polyline || polyline.length < 2) continue;
+
+        // b. Extract stop_position members in order
+        const stopMembers = rel.members.filter(m => m.type === 'node' && (m.role === 'stop' || m.role === 'stop_position'));
+
+        // c. Match each stop_position to a GTFS stop by nearest neighbour
+        const matchedStops = [];
+        for (const sm of stopMembers) {
+          const osmNode = nodeById[sm.ref];
+          if (!osmNode) continue;
+
+          let bestStop = null, bestDist = Infinity;
+          for (const stop of stops) {
+            const d = Math.hypot(parseFloat(stop.stop_lat) - osmNode.lat, parseFloat(stop.stop_lon) - osmNode.lon);
+            if (d < bestDist) { bestDist = d; bestStop = stop; }
+          }
+
+          if (bestStop && bestDist <= OSM_MATCH_DEG) {
+            matchedStops.push({ stop: bestStop, osmNode });
+          } else {
+            console.warn(`[OSM] Unmatched stop_position node ${sm.ref} at (${osmNode.lat}, ${osmNode.lon})`);
+          }
+        }
+
+        // d. Find nearest polyline index for each matched stop, then slice
+        const stopIndices = matchedStops.map(({ osmNode }) => {
+          let bestIdx = 0, bestDist = Infinity;
+          for (let i = 0; i < polyline.length; i++) {
+            const d = Math.hypot(polyline[i].lat - osmNode.lat, polyline[i].lng - osmNode.lng);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          }
+          return bestIdx;
+        });
+
+        for (let i = 1; i < matchedStops.length; i++) {
+          const idxA = stopIndices[i - 1];
+          const idxB = stopIndices[i];
+          if (idxA >= idxB) continue;
+          const key = makeSegKey(matchedStops[i - 1].stop.stop_id, matchedStops[i].stop.stop_id);
+          osmSegments[key] = polyline.slice(idxA, idxB + 1);
+          osmSegCount++;
+        }
+      }
+
+      console.log(`[OSM] Built ${osmSegCount} segments from ${relations.length} relations`);
+    } catch (osmErr) {
+      console.warn('[OSM] Failed to fetch OSM data, will use GTFS fallback for all segments:', osmErr.message);
+    }
+
+    // Build final segment-paths: prefer OSM geometry, fall back to GTFS shape
     const segmentPaths = {};
     for (const trip of trips) {
       const tripStops = stopTimesByTrip[trip.trip_id];
@@ -323,7 +423,13 @@ async function main() {
         const key = makeSegKey(stA.stop_id, stB.stop_id);
         if (segmentPaths[key]) continue;
 
-        segmentPaths[key] = extractSegPath(shape, stopA.stop_lat, stopA.stop_lon, stopB.stop_lat, stopB.stop_lon);
+        if (osmSegments[key]) {
+          segmentPaths[key] = osmSegments[key];
+          console.log(`[OSM] ${stA.stop_id} → ${stB.stop_id}`);
+        } else {
+          segmentPaths[key] = extractSegPath(shape, stopA.stop_lat, stopA.stop_lon, stopB.stop_lat, stopB.stop_lon);
+          console.log(`[GTFS fallback] ${stA.stop_id} → ${stB.stop_id}`);
+        }
       }
     }
     writeJSON('segment-paths.json', segmentPaths);
