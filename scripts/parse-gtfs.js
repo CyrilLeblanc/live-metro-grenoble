@@ -88,17 +88,58 @@ function cleanShape(points, threshold = 120) {
       i++;
     }
   }
-  // Also remove trailing points that reverse the established direction
-  while (result.length >= 3) {
-    const n = result.length;
-    const bPrev = bearing(result[n - 3], result[n - 2]);
-    const bLast = bearing(result[n - 2], result[n - 1]);
-    let diff = Math.abs(bPrev - bLast) % 360;
-    if (diff > 180) diff = 360 - diff;
-    if (diff > threshold) result.pop();
-    else break;
+  return result;
+}
+
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const lat1 = parseFloat(a.lat) * Math.PI / 180;
+  const lat2 = parseFloat(b.lat) * Math.PI / 180;
+  const dlat = (parseFloat(b.lat) - parseFloat(a.lat)) * Math.PI / 180;
+  const dlon = (parseFloat(b.lon) - parseFloat(a.lon)) * Math.PI / 180;
+  const s = Math.sin(dlat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dlon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+function subdivideShape(points, maxDist = 15) {
+  if (points.length < 2) return points;
+  const result = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const dist = haversineMeters(a, b);
+    if (dist > maxDist) {
+      const n = Math.ceil(dist / maxDist);
+      for (let j = 1; j < n; j++) {
+        const t = j / n;
+        result.push({
+          lat: String(parseFloat(a.lat) + t * (parseFloat(b.lat) - parseFloat(a.lat))),
+          lon: String(parseFloat(a.lon) + t * (parseFloat(b.lon) - parseFloat(a.lon))),
+          sequence: a.sequence,
+        });
+      }
+    }
+    result.push(b);
   }
   return result;
+}
+
+function smoothShape(points, iterations = 3) {
+  if (points.length < 3) return points;
+  let pts = points;
+  for (let iter = 0; iter < iterations; iter++) {
+    const next = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      next.push({
+        lat: String(0.25 * parseFloat(pts[i - 1].lat) + 0.5 * parseFloat(pts[i].lat) + 0.25 * parseFloat(pts[i + 1].lat)),
+        lon: String(0.25 * parseFloat(pts[i - 1].lon) + 0.5 * parseFloat(pts[i].lon) + 0.25 * parseFloat(pts[i + 1].lon)),
+        sequence: pts[i].sequence,
+      });
+    }
+    next.push(pts[pts.length - 1]);
+    pts = next;
+  }
+  return pts;
 }
 
 function writeJSON(filename, data) {
@@ -198,6 +239,8 @@ async function main() {
       const before = shapes[id].length;
       shapes[id] = cleanShape(shapes[id]);
       totalRemoved += before - shapes[id].length;
+      shapes[id] = subdivideShape(shapes[id]);
+      shapes[id] = smoothShape(shapes[id]);
     }
     console.log(`cleanShape removed ${totalRemoved} points across all shapes`);
     writeJSON('shapes.json', shapes);
@@ -214,21 +257,42 @@ async function main() {
       const b = { lat: parseFloat(stopBLat), lng: parseFloat(stopBLon) };
       if (!shape || shape.length < 2) return [a, b];
 
-      let iA = 0, iB = 0, dA = Infinity, dB = Infinity;
-      for (let i = 0; i < shape.length; i++) {
-        const da = Math.hypot(parseFloat(shape[i].lat) - a.lat, parseFloat(shape[i].lon) - a.lng);
-        const db = Math.hypot(parseFloat(shape[i].lat) - b.lat, parseFloat(shape[i].lon) - b.lng);
-        if (da < dA) { dA = da; iA = i; }
-        if (db < dB) { dB = db; iB = i; }
+      const SNAP_THRESHOLD_DEG = 0.001; // ~100m à 45°N
+
+      function cosLatDist(p, q) {
+        const cosLat = Math.cos(p.lat * Math.PI / 180);
+        return Math.hypot(parseFloat(p.lat) - q.lat, (parseFloat(p.lon ?? p.lng) - q.lng) * cosLat);
       }
 
-      const from = Math.min(iA, iB);
-      const to = Math.max(iA, iB);
-      return [
-        a,
-        ...shape.slice(from, to + 1).map(p => ({ lat: parseFloat(p.lat), lng: parseFloat(p.lon) })),
-        b,
-      ];
+      // First pass: find iA across the full shape
+      let iA = 0, dA = Infinity;
+      for (let i = 0; i < shape.length; i++) {
+        const d = cosLatDist(shape[i], a);
+        if (d < dA) { dA = d; iA = i; }
+      }
+
+      // Second pass: find iB only forward from iA + 1
+      let iB = -1, dB = Infinity;
+      for (let i = iA + 1; i < shape.length; i++) {
+        const d = cosLatDist(shape[i], b);
+        if (d < dB) { dB = d; iB = i; }
+      }
+
+      if (iB === -1) return [a, b];
+
+      const slice = shape.slice(iA, iB + 1).map(p => ({
+        lat: parseFloat(p.lat),
+        lng: parseFloat(p.lon ?? p.lng),
+      }));
+
+      // N'injecter a/b comme ancres que s'ils sont suffisamment éloignés
+      // du premier/dernier point du slice — sinon ils créent un micro U-turn
+      const result = [];
+      if (cosLatDist(shape[iA], a) > SNAP_THRESHOLD_DEG) result.push(a);
+      result.push(...slice);
+      if (cosLatDist(shape[iB], b) > SNAP_THRESHOLD_DEG) result.push(b);
+
+      return result.length >= 2 ? result : [a, b];
     }
 
     const stopById = {};
