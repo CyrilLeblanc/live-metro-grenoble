@@ -24,9 +24,10 @@ interface LatLng { lat: number; lng: number }
 
 interface Props {
   segmentPaths: Map<string, LatLng[]>
+  segmentStops: Map<string, { stopAId: string; stopBId: string }>
 }
 
-export default function DebugSegmentLayer({ segmentPaths }: Props) {
+export default function DebugSegmentLayer({ segmentPaths, segmentStops }: Props) {
   const { selectedSegmentKey, openPanel } = useDebugContext()
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const map = useMap()
@@ -35,10 +36,15 @@ export default function DebugSegmentLayer({ segmentPaths }: Props) {
     const result: SegmentInfo[] = []
     for (const [key, path] of segmentPaths.entries()) {
       if (path.length < 2) continue
-      result.push({ segmentKey: key, shapePath: path })
+      result.push({
+        segmentKey: key,
+        shapePath: path,
+        stopAId: segmentStops.get(key)?.stopAId ?? '',
+        stopBId: segmentStops.get(key)?.stopBId ?? '',
+      })
     }
     return result
-  }, [segmentPaths])
+  }, [segmentPaths, segmentStops])
 
   // Use map-level events: the canvas layer (z-index 650) blocks polyline-level
   // mouseover/mouseout, so we compute pixel-space distances ourselves.

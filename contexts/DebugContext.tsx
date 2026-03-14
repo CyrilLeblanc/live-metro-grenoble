@@ -8,6 +8,8 @@ interface LatLng { lat: number; lng: number }
 export interface SegmentInfo {
   segmentKey: string
   shapePath: LatLng[]
+  stopAId: string
+  stopBId: string
 }
 
 interface DebugContextValue {

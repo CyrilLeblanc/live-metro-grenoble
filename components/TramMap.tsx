@@ -114,7 +114,7 @@ export default function TramMap() {
   const { isDebug, frozenByPanel } = useDebugContext()
 
   // Load static GTFS data (routes, stops, shapes)
-  const { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, dataLoaded } = useGtfsData()
+  const { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded } = useGtfsData()
 
   // Poll real-time tram positions every 10 seconds
   const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded, frozenByPanel)
@@ -228,7 +228,7 @@ export default function TramMap() {
           onTramHover={(id) => setHighlightedTripId(id ? id.replace(/-\d+$/, '') : null)}
           opacity={frozenByPanel ? 0.3 : 1}
         />
-        {isDebug && <DebugSegmentLayer segmentPaths={segmentPaths} />}
+        {isDebug && <DebugSegmentLayer segmentPaths={segmentPaths} segmentStops={segmentStops} />}
         {isDebug && <DebugPlaybackLayer />}
       </MapContainer>
       {isDebug && <DebugPanel />}

@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, loadSegmentPaths, getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
+import { makeSegmentKey } from '../lib/geo'
 
 interface LatLng { lat: number; lng: number }
 
@@ -20,6 +21,7 @@ export interface GtfsData {
   tramRouteIds: Set<string>
   routeColorMap: Map<string, string>
   segmentPaths: Map<string, LatLng[]>
+  segmentStops: Map<string, { stopAId: string; stopBId: string }>
   dataLoaded: boolean
 }
 
@@ -29,6 +31,7 @@ export function useGtfsData(): GtfsData {
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [segmentPaths, setSegmentPaths] = useState<Map<string, LatLng[]>>(new Map())
+  const [segmentStops, setSegmentStops] = useState<Map<string, { stopAId: string; stopBId: string }>>(new Map())
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
@@ -117,10 +120,28 @@ export function useGtfsData(): GtfsData {
       setTramStops(tramClusters)
       setSegmentPaths(segPaths)
 
+      // Build segmentStops: segmentKey → { stopAId, stopBId }
+      const tripStopTimes = new Map<string, typeof stopTimes>()
+      for (const st of stopTimes) {
+        if (!tripStopTimes.has(st.trip_id)) tripStopTimes.set(st.trip_id, [])
+        tripStopTimes.get(st.trip_id)!.push(st)
+      }
+      const segStops = new Map<string, { stopAId: string; stopBId: string }>()
+      for (const times of tripStopTimes.values()) {
+        times.sort((a, b) => a.stop_sequence - b.stop_sequence)
+        for (let i = 0; i < times.length - 1; i++) {
+          const aId = times[i].stop_id
+          const bId = times[i + 1].stop_id
+          const key = makeSegmentKey(aId, bId)
+          if (!segStops.has(key)) segStops.set(key, { stopAId: aId, stopBId: bId })
+        }
+      }
+      setSegmentStops(segStops)
+
       setDataLoaded(true)
     }
     load()
   }, [])
 
-  return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, dataLoaded }
+  return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded }
 }
