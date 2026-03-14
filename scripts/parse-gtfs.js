@@ -64,6 +64,33 @@ function parseCSV(text) {
   return rows;
 }
 
+function bearing(a, b) {
+  const lat1 = parseFloat(a.lat) * Math.PI / 180;
+  const angle = Math.atan2(
+    (parseFloat(b.lon) - parseFloat(a.lon)) * Math.cos(lat1),
+    parseFloat(b.lat) - parseFloat(a.lat)
+  ) * 180 / Math.PI;
+  return (angle + 360) % 360;
+}
+
+function cleanShape(points, threshold = 120) {
+  if (points.length < 3) return points;
+  const result = [...points];
+  let i = 1;
+  while (i < result.length - 1) {
+    const bIn  = bearing(result[i - 1], result[i]);
+    const bOut = bearing(result[i],     result[i + 1]);
+    let diff = Math.abs(bIn - bOut) % 360;
+    if (diff > 180) diff = 360 - diff;
+    if (diff > threshold) {
+      result.splice(i, 1);
+    } else {
+      i++;
+    }
+  }
+  return result;
+}
+
 function writeJSON(filename, data) {
   const outPath = path.join(OUT_DIR, filename);
   fs.writeFileSync(outPath, JSON.stringify(data));
@@ -155,9 +182,14 @@ async function main() {
         sequence: parseInt(r.shape_pt_sequence, 10),
       });
     }
+    let totalRemoved = 0;
     for (const id of Object.keys(shapes)) {
       shapes[id].sort((a, b) => a.sequence - b.sequence);
+      const before = shapes[id].length;
+      shapes[id] = cleanShape(shapes[id]);
+      totalRemoved += before - shapes[id].length;
     }
+    console.log(`cleanShape removed ${totalRemoved} points across all shapes`);
     writeJSON('shapes.json', shapes);
 
     // segment-paths.json — pre-compute all unique stop-pair shape segments
