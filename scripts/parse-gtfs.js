@@ -88,6 +88,16 @@ function cleanShape(points, threshold = 120) {
       i++;
     }
   }
+  // Also remove trailing points that reverse the established direction
+  while (result.length >= 3) {
+    const n = result.length;
+    const bPrev = bearing(result[n - 3], result[n - 2]);
+    const bLast = bearing(result[n - 2], result[n - 1]);
+    let diff = Math.abs(bPrev - bLast) % 360;
+    if (diff > 180) diff = 360 - diff;
+    if (diff > threshold) result.pop();
+    else break;
+  }
   return result;
 }
 
