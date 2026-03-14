@@ -310,7 +310,7 @@ async function main() {
     // === OSM tram route geometry ===
     const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
     const OVERPASS_QUERY = `[out:json][timeout:60];
-relation["route"="tram"]["network"="TAG"](44.95,5.45,45.45,6.05);
+relation["route"="tram"](44.95,5.45,45.45,6.05);
 (._;>;);
 out body;`;
     const OSM_MATCH_DEG = 0.00045; // ~50 m
