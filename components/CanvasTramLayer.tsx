@@ -20,6 +20,7 @@ interface Props {
   highlightedTripId: string | null
   onTramClick: (id: string, x: number, y: number) => void
   onTramHover: (id: string | null) => void
+  opacity?: number
 }
 
 function buildSprite(color: string, highlighted: boolean): OffscreenCanvas {
@@ -52,17 +53,19 @@ function buildSprite(color: string, highlighted: boolean): OffscreenCanvas {
   return oc
 }
 
-export default function CanvasTramLayer({ tramMarkers, positionsRef, highlightedTripId, onTramClick, onTramHover }: Props) {
+export default function CanvasTramLayer({ tramMarkers, positionsRef, highlightedTripId, onTramClick, onTramHover, opacity = 1 }: Props) {
   const map = useMap()
   const tramMarkersRef = useRef(tramMarkers)
   const highlightedRef = useRef(highlightedTripId)
   const onTramClickRef = useRef(onTramClick)
   const onTramHoverRef = useRef(onTramHover)
+  const opacityRef = useRef(opacity)
 
   useEffect(() => { tramMarkersRef.current = tramMarkers }, [tramMarkers])
   useEffect(() => { highlightedRef.current = highlightedTripId }, [highlightedTripId])
   useEffect(() => { onTramClickRef.current = onTramClick }, [onTramClick])
   useEffect(() => { onTramHoverRef.current = onTramHover }, [onTramHover])
+  useEffect(() => { opacityRef.current = opacity }, [opacity])
 
   useEffect(() => {
     const container = map.getContainer()
@@ -114,7 +117,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
         const sprite = getSprite(marker.color, isHighlighted)
 
         ctx.save()
-        ctx.globalAlpha = marker.isRealtime ? 1 : 0.5
+        ctx.globalAlpha = (marker.isRealtime ? 1 : 0.5) * opacityRef.current
         ctx.translate(pt.x, pt.y)
         ctx.rotate((pos.bearing * Math.PI) / 180)
         ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2)

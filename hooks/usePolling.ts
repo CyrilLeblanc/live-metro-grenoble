@@ -29,7 +29,7 @@ export interface PollingData {
   refresh: () => void
 }
 
-export function usePolling(dataLoaded: boolean): PollingData {
+export function usePolling(dataLoaded: boolean, paused = false): PollingData {
   const [apiTrams, setApiTrams] = useState<TramApiItem[]>([])
   const [tramMarkers, setTramMarkers] = useState<TramMarkerData[]>([])
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_START_S)
@@ -38,10 +38,19 @@ export function usePolling(dataLoaded: boolean): PollingData {
   const tickRef = useRef<(() => Promise<void>) | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pausedRef = useRef(paused)
 
-  function resetTimers() {
+  useEffect(() => { pausedRef.current = paused }, [paused])
+
+  function clearTimers() {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+    pollIntervalRef.current = null
+    countdownIntervalRef.current = null
+  }
+
+  function resetTimers() {
+    clearTimers()
     setSecondsLeft(COUNTDOWN_START_S)
     countdownIntervalRef.current = setInterval(() => {
       setSecondsLeft(s => Math.max(0, s - 1))
@@ -55,6 +64,7 @@ export function usePolling(dataLoaded: boolean): PollingData {
     if (!dataLoaded) return
 
     async function tick() {
+      if (pausedRef.current) return
       // Guard against overlapping in-flight requests
       if (pollingInFlightRef.current) return
       pollingInFlightRef.current = true
@@ -83,11 +93,20 @@ export function usePolling(dataLoaded: boolean): PollingData {
     tick()
 
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+      clearTimers()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataLoaded])
+
+  // Pause/resume effect: clear timers when paused, restart + immediate fetch when unpaused
+  useEffect(() => {
+    if (!dataLoaded) return
+    if (paused) {
+      clearTimers()
+    } else {
+      tickRef.current?.()
+    }
+  }, [paused, dataLoaded])
 
   function refresh() {
     tickRef.current?.()

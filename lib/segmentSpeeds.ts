@@ -7,7 +7,7 @@ import { SEGMENT_SPEEDS_MAX_RECORDS, SEGMENT_SPEEDS_GRID_STEP_SEC } from './conf
 
 export { makeSegmentKey }
 
-interface SpeedGraphRecord {
+export interface SpeedGraphRecord {
   id: string
   recordedAt: number
   totalDurationSec: number
@@ -20,13 +20,34 @@ function filePath(key: string): string {
   return join(DATA_DIR, `${key}.json`)
 }
 
-async function readRecords(key: string): Promise<SpeedGraphRecord[]> {
+export async function readRecords(key: string): Promise<SpeedGraphRecord[]> {
   try {
     const raw = await readFile(filePath(key), 'utf-8')
     return JSON.parse(raw) as SpeedGraphRecord[]
   } catch {
     return []
   }
+}
+
+export async function deleteRecord(key: string, id: string): Promise<void> {
+  const records = await readRecords(key)
+  const filtered = records.filter(r => r.id !== id)
+  await mkdir(DATA_DIR, { recursive: true })
+  await writeFile(filePath(key), JSON.stringify(filtered), 'utf-8')
+}
+
+export async function updateRecord(
+  key: string,
+  id: string,
+  patch: { totalDurationSec?: number; points?: Array<{ tSec: number; speedMs: number }> }
+): Promise<boolean> {
+  const records = await readRecords(key)
+  const idx = records.findIndex(r => r.id === id)
+  if (idx === -1) return false
+  records[idx] = { ...records[idx], ...patch }
+  await mkdir(DATA_DIR, { recursive: true })
+  await writeFile(filePath(key), JSON.stringify(records), 'utf-8')
+  return true
 }
 
 export async function appendSpeedGraph(

@@ -1,9 +1,9 @@
-import TramMapLoader from '@/components/TramMapLoader'
+import DebugProviderWrapper from '@/components/DebugProviderWrapper'
 
 export default function Home() {
   return (
     <main>
-      <TramMapLoader />
+      <DebugProviderWrapper />
     </main>
   )
 }
