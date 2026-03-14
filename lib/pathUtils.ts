@@ -53,23 +53,36 @@ export function bearingAtProgress(path: LatLng[], lengths: number[], progress: n
 }
 
 /**
+ * Returns the smallest index i (1 ≤ i ≤ lengths.length-1) such that lengths[i] >= progress.
+ * lengths is guaranteed sorted ascending by buildPathLengths.
+ */
+function upperBound(lengths: number[], progress: number): number {
+  let lo = 1
+  let hi = lengths.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (lengths[mid] < progress) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/**
  * Returns the interpolated lat/lng on `path` at a given distance `progress` (metres).
  *
- * Walks the cumulative-distance array to find the segment containing `progress`,
- * then linearly interpolates between its two endpoints.
+ * Uses binary search on the cumulative-distance array to find the segment containing
+ * `progress`, then linearly interpolates between its two endpoints.
  */
 export function positionAtProgress(path: LatLng[], lengths: number[], progress: number): LatLng {
   if (path.length === 0) return { lat: 0, lng: 0 }
   if (path.length === 1) return path[0]
-  for (let i = 1; i < path.length; i++) {
-    if (lengths[i] >= progress || i === path.length - 1) {
-      const segLen = lengths[i] - lengths[i - 1]
-      const t = segLen === 0 ? 0 : Math.min(1, (progress - lengths[i - 1]) / segLen)
-      return {
-        lat: path[i - 1].lat + t * (path[i].lat - path[i - 1].lat),
-        lng: path[i - 1].lng + t * (path[i].lng - path[i - 1].lng),
-      }
-    }
+
+  const i = upperBound(lengths, progress)
+
+  const segLen = lengths[i] - lengths[i - 1]
+  const t = segLen === 0 ? 0 : Math.min(1, (progress - lengths[i - 1]) / segLen)
+  return {
+    lat: path[i - 1].lat + t * (path[i].lat - path[i - 1].lat),
+    lng: path[i - 1].lng + t * (path[i].lng - path[i - 1].lng),
   }
-  return path[path.length - 1]
 }
