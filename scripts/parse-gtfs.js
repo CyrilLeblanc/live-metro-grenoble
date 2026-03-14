@@ -160,6 +160,68 @@ async function main() {
     }
     writeJSON('shapes.json', shapes);
 
+    // segment-paths.json — pre-compute all unique stop-pair shape segments
+    console.log('Building segment paths...');
+
+    function makeSegKey(a, b) {
+      return [a, b].sort().join('__').replace(/[^a-zA-Z0-9]/g, '-');
+    }
+
+    function extractSegPath(shape, stopALat, stopALon, stopBLat, stopBLon) {
+      const a = { lat: parseFloat(stopALat), lng: parseFloat(stopALon) };
+      const b = { lat: parseFloat(stopBLat), lng: parseFloat(stopBLon) };
+      if (!shape || shape.length < 2) return [a, b];
+
+      let iA = 0, iB = 0, dA = Infinity, dB = Infinity;
+      for (let i = 0; i < shape.length; i++) {
+        const da = Math.hypot(parseFloat(shape[i].lat) - a.lat, parseFloat(shape[i].lon) - a.lng);
+        const db = Math.hypot(parseFloat(shape[i].lat) - b.lat, parseFloat(shape[i].lon) - b.lng);
+        if (da < dA) { dA = da; iA = i; }
+        if (db < dB) { dB = db; iB = i; }
+      }
+
+      const from = Math.min(iA, iB);
+      const to = Math.max(iA, iB);
+      return [
+        a,
+        ...shape.slice(from, to + 1).map(p => ({ lat: parseFloat(p.lat), lng: parseFloat(p.lon) })),
+        b,
+      ];
+    }
+
+    const stopById = {};
+    for (const stop of stops) stopById[stop.stop_id] = stop;
+
+    const stopTimesByTrip = {};
+    for (const st of stopTimes) {
+      if (!stopTimesByTrip[st.trip_id]) stopTimesByTrip[st.trip_id] = [];
+      stopTimesByTrip[st.trip_id].push(st);
+    }
+    for (const arr of Object.values(stopTimesByTrip)) {
+      arr.sort((a, b) => parseInt(a.stop_sequence, 10) - parseInt(b.stop_sequence, 10));
+    }
+
+    const segmentPaths = {};
+    for (const trip of trips) {
+      const tripStops = stopTimesByTrip[trip.trip_id];
+      if (!tripStops) continue;
+      const shape = shapes[trip.shape_id];
+
+      for (let i = 1; i < tripStops.length; i++) {
+        const stA = tripStops[i - 1];
+        const stB = tripStops[i];
+        const stopA = stopById[stA.stop_id];
+        const stopB = stopById[stB.stop_id];
+        if (!stopA || !stopB) continue;
+
+        const key = makeSegKey(stA.stop_id, stB.stop_id);
+        if (segmentPaths[key]) continue;
+
+        segmentPaths[key] = extractSegPath(shape, stopA.stop_lat, stopA.stop_lon, stopB.stop_lat, stopB.stop_lon);
+      }
+    }
+    writeJSON('segment-paths.json', segmentPaths);
+
     console.log('Done.');
   } catch (err) {
     console.error('Error:', err.message);

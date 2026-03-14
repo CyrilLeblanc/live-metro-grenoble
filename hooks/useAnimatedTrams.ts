@@ -11,7 +11,6 @@ export interface TramApiItem {
   lat: number
   lng: number
   eta: number
-  shapePath: LatLng[]
   stopAId: string
   stopBId: string
   line: string
@@ -47,8 +46,10 @@ interface TramAnimState {
 
 export function useAnimatedTrams(
   apiTrams: TramApiItem[],
+  segmentPaths: Map<string, LatLng[]> | undefined,
   segmentGraphs?: Map<string, AveragedGraph>,
   speedOverrides?: Map<string, number>,
+  paused?: boolean,
 ): React.RefObject<Map<string, TramPosition>> {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
   const positionsRef = useRef<Map<string, TramPosition>>(new Map())
@@ -57,6 +58,7 @@ export function useAnimatedTrams(
   const lastFrameTimeRef = useRef<number | null>(null)
   const segmentGraphsRef = useRef<Map<string, AveragedGraph>>(segmentGraphs ?? new Map())
   const speedOverridesRef = useRef<Map<string, number>>(speedOverrides ?? new Map())
+  const pausedRef = useRef(paused ?? false)
 
   useEffect(() => {
     segmentGraphsRef.current = segmentGraphs ?? new Map()
@@ -65,6 +67,15 @@ export function useAnimatedTrams(
   useEffect(() => {
     speedOverridesRef.current = speedOverrides ?? new Map()
   }, [speedOverrides])
+
+  useEffect(() => {
+    const wasPaused = pausedRef.current
+    pausedRef.current = paused ?? false
+    // On unpause: reset lastFrameTimeRef so we don't get a huge dt jump
+    if (wasPaused && !pausedRef.current) {
+      lastFrameTimeRef.current = null
+    }
+  }, [paused])
 
   // Update animation state on each API tick
   useEffect(() => {
@@ -80,11 +91,12 @@ export function useAnimatedTrams(
         positionsRef.current.set(item.id, { lat: item.lat, lng: item.lng, bearing: 0 })
       }
 
-      if (!item.shapePath || item.shapePath.length < 2) continue
+      const shapePath = segmentPaths?.get(makeSegmentKey(item.stopAId, item.stopBId))
+      if (!shapePath || shapePath.length < 2) continue
 
       const prev = animStateRef.current.get(item.id)
-      const { lengths, total } = buildPathLengths(item.shapePath)
-      const progress = findProgressOnPath(item.shapePath, lengths, { lat: item.lat, lng: item.lng })
+      const { lengths, total } = buildPathLengths(shapePath)
+      const progress = findProgressOnPath(shapePath, lengths, { lat: item.lat, lng: item.lng })
 
       let speedMs: number
       if (prev && elapsedSec > 0.1) {
@@ -99,7 +111,7 @@ export function useAnimatedTrams(
       if (prev) {
         // Map the current animated position onto the new path
         const animatedPos = positionAtProgress(prev.path, prev.pathLengths, prev.progressMeters)
-        const mappedProgress = findProgressOnPath(item.shapePath, lengths, animatedPos)
+        const mappedProgress = findProgressOnPath(shapePath, lengths, animatedPos)
         // Forward-only: keep animated position for smooth movement.
         // Backward jump (e.g. API correction): snap to the API position.
         progressMeters = mappedProgress <= progress ? mappedProgress : progress
@@ -108,7 +120,7 @@ export function useAnimatedTrams(
       }
 
       animStateRef.current.set(item.id, {
-        path: item.shapePath,
+        path: shapePath,
         pathLengths: lengths,
         totalLength: total,
         progressMeters,
@@ -134,6 +146,12 @@ export function useAnimatedTrams(
   // requestAnimationFrame loop — runs at ~60 fps
   useEffect(() => {
     function frame(now: number) {
+      if (pausedRef.current) {
+        lastFrameTimeRef.current = null
+        rafRef.current = requestAnimationFrame(frame)
+        return
+      }
+
       const dt = lastFrameTimeRef.current !== null ? (now - lastFrameTimeRef.current) / 1000 : 0
       lastFrameTimeRef.current = now
 

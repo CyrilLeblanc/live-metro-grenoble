@@ -108,6 +108,17 @@ export function getClusterId(stop: Stop): string {
   return stop.parent_station || stop.stop_id
 }
 
+interface LatLng { lat: number; lng: number }
+
+let segmentPathsCache: Map<string, LatLng[]> | null = null
+
+export async function loadSegmentPaths(): Promise<Map<string, LatLng[]>> {
+  if (segmentPathsCache) return segmentPathsCache
+  const raw = await loadJson<Record<string, LatLng[]>>('segment-paths.json')
+  segmentPathsCache = new Map(Object.entries(raw))
+  return segmentPathsCache
+}
+
 export async function loadShapes(): Promise<ShapePoint[]> {
   if (shapesCache) return shapesCache;
   const raw = await loadJson<Record<string, { lat: string; lon: string; sequence: number }[]>>('shapes.json');

@@ -32,7 +32,6 @@ export interface TramPosition {
   nextStop: string
   eta: number
   isRealtime: boolean
-  shapePath: Array<{ lat: number; lng: number }>
   stopAId: string
   stopBId: string
 }
@@ -47,31 +46,6 @@ const RESPONSE_CACHE_TTL_MS = 10_000
 let cachedResponse: { data: TramPosition[]; fetchedAt: number } | null = null
 let inFlightFetch: Promise<TramPosition[]> | null = null
 
-function extractShapeSegment(
-  shape: ShapePoint[] | undefined,
-  stopA: Stop,
-  stopB: Stop,
-): Array<{ lat: number; lng: number }> {
-  const a = { lat: stopA.stop_lat, lng: stopA.stop_lon }
-  const b = { lat: stopB.stop_lat, lng: stopB.stop_lon }
-  if (!shape || shape.length < 2) return [a, b]
-
-  let iA = 0, iB = 0, dA = Infinity, dB = Infinity
-  for (let i = 0; i < shape.length; i++) {
-    const da = Math.hypot(shape[i].shape_pt_lat - stopA.stop_lat, shape[i].shape_pt_lon - stopA.stop_lon)
-    const db = Math.hypot(shape[i].shape_pt_lat - stopB.stop_lat, shape[i].shape_pt_lon - stopB.stop_lon)
-    if (da < dA) { dA = da; iA = i }
-    if (db < dB) { dB = db; iB = i }
-  }
-
-  const from = Math.min(iA, iB)
-  const to = Math.max(iA, iB)
-  return [
-    a,
-    ...shape.slice(from, to + 1).map(p => ({ lat: p.shape_pt_lat, lng: p.shape_pt_lon })),
-    b,
-  ]
-}
 
 async function buildGtfsIndex(): Promise<GtfsIndex> {
   const [routes, trips, shapes, stops, stopTimes] = await Promise.all([
@@ -196,7 +170,6 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
 
         if (pos) {
           seenTrips.add(tripId)
-          const shapePath = extractShapeSegment(shape, stopA, stopB)
           results.push({
             id: `${tripId}-${stopIdx}`,
             lat: pos.lat,
@@ -207,7 +180,6 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
             nextStop: stopB.stop_name,
             eta: timeB - now,
             isRealtime: realtime,
-            shapePath,
             stopAId: stA.stop_id,
             stopBId: stB.stop_id,
           })

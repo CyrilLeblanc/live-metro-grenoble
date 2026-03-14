@@ -17,6 +17,10 @@ import CanvasTramLayer, { TramMarkerData } from './CanvasTramLayer'
 import OnTramOverlay from './OnTramOverlay'
 import UserLocationMarker from './UserLocationMarker'
 import { Stop } from '../lib/gtfs'
+import { useDebugContext } from '../contexts/DebugContext'
+import DebugSegmentLayer from './debug/DebugSegmentLayer'
+import DebugPlaybackLayer from './debug/DebugPlaybackLayer'
+import DebugPanel from './debug/DebugPanel'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   useMapEvents({ click: () => onMapClick() })
@@ -106,11 +110,14 @@ export default function TramMap() {
   const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
 
+  // Debug mode context
+  const { isDebug, frozenByPanel } = useDebugContext()
+
   // Load static GTFS data (routes, stops, shapes)
-  const { lineShapes, tramStops, tramRouteIds, routeColorMap, dataLoaded } = useGtfsData()
+  const { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, dataLoaded } = useGtfsData()
 
   // Poll real-time tram positions every 10 seconds
-  const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded)
+  const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded, frozenByPanel)
 
   // Segment graphs for animation refinement
   const segmentKeys = useMemo(
@@ -142,7 +149,7 @@ export default function TramMap() {
     return new Map([[userTramId, currentSpeedMs]])
   }, [isConfirmed, userTramId, currentSpeedMs])
 
-  const positionsRef = useAnimatedTrams(apiTrams, segmentGraphs, speedOverrides)
+  const positionsRef = useAnimatedTrams(apiTrams, segmentPaths, segmentGraphs, speedOverrides, frozenByPanel)
 
   // Keep placeholder ref in sync so useUserOnTram gets real animated positions
   useEffect(() => {
@@ -219,8 +226,12 @@ export default function TramMap() {
             if (data) setPopupTram({ id, x, y, data })
           }}
           onTramHover={(id) => setHighlightedTripId(id ? id.replace(/-\d+$/, '') : null)}
+          opacity={frozenByPanel ? 0.3 : 1}
         />
+        {isDebug && <DebugSegmentLayer segmentPaths={segmentPaths} />}
+        {isDebug && <DebugPlaybackLayer />}
       </MapContainer>
+      {isDebug && <DebugPanel />}
       {popupTram && (
         <div
           style={{

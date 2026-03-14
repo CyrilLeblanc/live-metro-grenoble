@@ -10,13 +10,16 @@
  */
 
 import { useEffect, useState } from 'react'
-import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
+import { loadRoutes, loadShapes, loadStops, loadStopTimes, loadTrips, loadSegmentPaths, getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
+
+interface LatLng { lat: number; lng: number }
 
 export interface GtfsData {
   lineShapes: Array<{ route: Route; points: ShapePoint[] }>
   tramStops: Array<{ stop: Stop; color: string }>
   tramRouteIds: Set<string>
   routeColorMap: Map<string, string>
+  segmentPaths: Map<string, LatLng[]>
   dataLoaded: boolean
 }
 
@@ -25,12 +28,13 @@ export function useGtfsData(): GtfsData {
   const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
+  const [segmentPaths, setSegmentPaths] = useState<Map<string, LatLng[]>>(new Map())
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const [routes, trips, shapes, stops, stopTimes] = await Promise.all([
-        loadRoutes(), loadTrips(), loadShapes(), loadStops(), loadStopTimes()
+      const [routes, trips, shapes, stops, stopTimes, segPaths] = await Promise.all([
+        loadRoutes(), loadTrips(), loadShapes(), loadStops(), loadStopTimes(), loadSegmentPaths()
       ])
 
       // --- Build shape map: shape_id → sorted ShapePoint[] ---
@@ -111,11 +115,12 @@ export function useGtfsData(): GtfsData {
         })
       }
       setTramStops(tramClusters)
+      setSegmentPaths(segPaths)
 
       setDataLoaded(true)
     }
     load()
   }, [])
 
-  return { lineShapes, tramStops, tramRouteIds, routeColorMap, dataLoaded }
+  return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, dataLoaded }
 }
