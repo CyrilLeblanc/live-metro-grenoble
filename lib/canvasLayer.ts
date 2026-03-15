@@ -17,6 +17,11 @@ interface MapCanvasOptions {
 /**
  * Creates a canvas overlay attached to a Leaflet map container.
  *
+ * The canvas buffer is allocated at physical resolution (logical size × devicePixelRatio)
+ * and a matching ctx.scale(dpr, dpr) transform is applied after every resize so that
+ * all draw calls can use logical pixel coordinates. Resizing resets the context transform,
+ * so the scale is reapplied on every resize event.
+ *
  * The canvas auto-resizes on map resize/zoom/move events. Call `cleanup()`
  * on unmount to remove the canvas and all event listeners.
  *
@@ -39,8 +44,16 @@ export function createMapCanvas(
 
   function resize() {
     const size = map.getSize()
-    canvas.width = size.x
-    canvas.height = size.y
+    const dpr = window.devicePixelRatio || 1
+    // Allocate buffer at physical pixels so sprites aren't up-scaled by the browser
+    canvas.width = Math.round(size.x * dpr)
+    canvas.height = Math.round(size.y * dpr)
+    // CSS size stays at logical pixels so the canvas fits the map container exactly
+    canvas.style.width = size.x + 'px'
+    canvas.style.height = size.y + 'px'
+    // Reapply the DPR scale — resizing always resets the context transform
+    const ctx = canvas.getContext('2d')
+    if (ctx) ctx.scale(dpr, dpr)
   }
   resize()
   map.on('resize', resize)

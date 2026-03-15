@@ -96,6 +96,12 @@ export const TRAM_SPRITE_SIZE_HIGHLIGHTED = 32
 /** Squared pixel radius for tram click/hover hit-testing on the canvas. */
 export const TRAM_HIT_TEST_RADIUS_SQ = 16 * 16
 
+/**
+ * Physical distance between consecutive wagon centres along the polyline (metres).
+ * At zoom 15 (~45°N) this corresponds to roughly 10–12 logical pixels.
+ */
+export const WAGON_GAP_M = 35
+
 // ---------------------------------------------------------------------------
 // Upstream API timeouts and caching
 // ---------------------------------------------------------------------------

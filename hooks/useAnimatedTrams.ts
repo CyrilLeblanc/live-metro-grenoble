@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { haversineDistance, makeSegmentKey, AveragedGraph, LatLng } from '../lib/geo'
-import { DECEL_THRESHOLD, MAX_SPEED, MIN_ELAPSED_FOR_SPEED } from '../lib/config'
+import { DECEL_THRESHOLD, MAX_SPEED, MIN_ELAPSED_FOR_SPEED, WAGON_GAP_M } from '../lib/config'
 import { interpolateSpeed } from '../lib/speedUtils'
 import { buildPathLengths, findProgressOnPath, positionAtProgress, bearingAtProgress } from '../lib/pathUtils'
 
@@ -18,10 +18,19 @@ export interface TramApiItem {
   isRealtime: boolean
 }
 
+export interface WagonPosition {
+  lat: number
+  lng: number
+  bearing: number
+}
+
 export interface AnimatedPosition {
   lat: number
   lng: number
   bearing: number
+  /** Body wagon positions, ordered from closest to furthest behind the head.
+   *  Only present when the tram has a shape path to rewind along. */
+  wagons?: WagonPosition[]
 }
 
 /** Per-tram mutable animation state, updated each API tick and each rAF frame. */
@@ -151,7 +160,7 @@ export function useAnimatedTrams(
     }
   }, [apiTrams])
 
-  // requestAnimationFrame loop — runs at ~60 fps
+  // requestAnimationFrame loop — throttled to ~10 fps
   useEffect(() => {
     function animationFrame(now: number) {
       if (pausedRef.current) {
@@ -160,7 +169,14 @@ export function useAnimatedTrams(
         return
       }
 
-      const dt = lastFrameTimeRef.current !== null ? (now - lastFrameTimeRef.current) / 1000 : 0
+      // Throttle: skip frames that arrive sooner than 100 ms after the last one
+      const prevTime = lastFrameTimeRef.current
+      if (prevTime !== null && now - prevTime < 100) {
+        rafRef.current = requestAnimationFrame(animationFrame)
+        return
+      }
+
+      const dt = prevTime !== null ? (now - prevTime) / 1000 : 0
       lastFrameTimeRef.current = now
 
       for (const [id, state] of animStateRef.current) {
@@ -194,7 +210,24 @@ export function useAnimatedTrams(
 
         const pos = positionAtProgress(state.path, state.pathLengths, state.progressMeters)
         const bearing = bearingAtProgress(state.path, state.pathLengths, state.progressMeters)
-        positionsRef.current.set(id, { lat: pos.lat, lng: pos.lng, bearing })
+
+        // Compute body wagon positions by rewinding along the polyline
+        const w1Progress = Math.max(0, state.progressMeters - WAGON_GAP_M)
+        const w2Progress = Math.max(0, state.progressMeters - 2 * WAGON_GAP_M)
+        const w1Pos = positionAtProgress(state.path, state.pathLengths, w1Progress)
+        const w2Pos = positionAtProgress(state.path, state.pathLengths, w2Progress)
+        const w1Bearing = bearingAtProgress(state.path, state.pathLengths, w1Progress)
+        const w2Bearing = bearingAtProgress(state.path, state.pathLengths, w2Progress)
+
+        positionsRef.current.set(id, {
+          lat: pos.lat,
+          lng: pos.lng,
+          bearing,
+          wagons: [
+            { lat: w1Pos.lat, lng: w1Pos.lng, bearing: w1Bearing },
+            { lat: w2Pos.lat, lng: w2Pos.lng, bearing: w2Bearing },
+          ],
+        })
       }
       rafRef.current = requestAnimationFrame(animationFrame)
     }
