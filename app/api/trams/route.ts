@@ -165,12 +165,15 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
 
         const shape = index.shapeByShapeId.get(trip.shape_id)
 
-        const pos = interpolatePosition({
-          currentTime: now,
-          stopA: { lat: stopA.stop_lat, lng: stopA.stop_lon, time: timeA },
-          stopB: { lat: stopB.stop_lat, lng: stopB.stop_lon, time: timeB },
-          shape: shape?.map(p => ({ lat: p.shape_pt_lat, lon: p.shape_pt_lon })),
-        })
+        const pos =
+          interpolatePosition({
+            currentTime: now,
+            stopA: { lat: stopA.stop_lat, lng: stopA.stop_lon, time: timeA },
+            stopB: { lat: stopB.stop_lat, lng: stopB.stop_lon, time: timeB },
+            shape: shape?.map(p => ({ lat: p.shape_pt_lat, lon: p.shape_pt_lon })),
+          }) ?? (Math.abs(now - timeB) <= 30
+            ? { lat: stopB.stop_lat, lng: stopB.stop_lon }
+            : null)
 
         if (pos) {
           seenTrips.add(tripId)
