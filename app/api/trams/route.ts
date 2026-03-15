@@ -11,7 +11,7 @@
 
 import { interpolatePosition } from '../../../lib/interpolator'
 import { loadRoutes, loadTrips, loadShapes, loadStops, loadStopTimes, getClusterId, stripAgencyPrefix, Route, Stop, Trip, StopTime, ShapePoint } from '../../../lib/gtfs'
-import { UPSTREAM_API_BASE } from '../../../lib/config'
+import { UPSTREAM_API_BASE, CLUSTER_TIMEOUT_MS, RESPONSE_CACHE_TTL_MS } from '../../../lib/config'
 
 interface GtfsIndex {
   stopById: Map<string, Stop>
@@ -40,9 +40,8 @@ export interface TramPosition {
 let gtfsIndex: GtfsIndex | null = null
 let lastGoodResponse: TramPosition[] | null = null
 
-// Shared response cache: all users within the same 10 s window get the same result.
+// Shared response cache: all users within the same window get the same result.
 // inFlightFetch deduplicates concurrent requests during a cache miss.
-const RESPONSE_CACHE_TTL_MS = 10_000
 let cachedResponse: { data: TramPosition[]; fetchedAt: number } | null = null
 let inFlightFetch: Promise<TramPosition[]> | null = null
 
@@ -103,7 +102,6 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
   type UpstreamGroup = { pattern: { id: string; desc: string }; times: UpstreamTime[] }
 
   // Fan out to all active clusters in parallel; failures are silently ignored via allSettled
-  const CLUSTER_TIMEOUT_MS = 3000
   const settled = await Promise.allSettled(
     index.activeClusterIds.map(id => {
       const controller = new AbortController()
@@ -155,6 +153,12 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
         const stopB = index.stopById.get(stB.stop_id)
         if (!stopA || !stopB) continue
 
+        // --- Segment time window calculation ---
+        // The upstream API gives us `realtimeDeparture` (seconds since midnight of
+        // `serviceDay`) for the *next* stop (B). We derive the delay by comparing
+        // this to the scheduled arrival at B, then shift stop A's departure by the
+        // same delay. This makes the interpolation window (timeA → timeB) slide
+        // with real-time fluctuations while preserving the scheduled travel time.
         const [hB, mB, sB] = stB.arrival_time.split(':').map(Number)
         const scheduledArrivalB = serviceDay + hB * 3600 + mB * 60 + sB
         const delaySeconds = (serviceDay + realtimeDeparture) - scheduledArrivalB

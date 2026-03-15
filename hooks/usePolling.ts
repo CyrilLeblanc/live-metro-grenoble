@@ -57,7 +57,7 @@ export function usePolling(dataLoaded: boolean, paused = false): PollingData {
   useEffect(() => {
     if (!dataLoaded) return
 
-    async function tick() {
+    async function fetchTramPositions() {
       if (pausedRef.current) return
       // Guard against overlapping in-flight requests
       if (pollingInFlightRef.current) return
@@ -83,8 +83,8 @@ export function usePolling(dataLoaded: boolean, paused = false): PollingData {
       resetTimers()
     }
 
-    tickRef.current = tick
-    tick()
+    tickRef.current = fetchTramPositions
+    fetchTramPositions()
 
     return () => {
       clearTimers()

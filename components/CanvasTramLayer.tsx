@@ -4,6 +4,7 @@ import { useMap } from 'react-leaflet'
 import type { AnimatedPosition } from '../hooks/useAnimatedTrams'
 import { TramMarkerData } from '../lib/geo'
 import { createMapCanvas } from '../lib/canvasLayer'
+import { TRAM_SPRITE_SIZE, TRAM_SPRITE_SIZE_HIGHLIGHTED, TRAM_HIT_TEST_RADIUS_SQ } from '../lib/config'
 
 interface Props {
   tramMarkers: TramMarkerData[]
@@ -15,12 +16,12 @@ interface Props {
 }
 
 function buildSprite(color: string, highlighted: boolean): OffscreenCanvas {
-  const size = highlighted ? 32 : 24
+  const size = highlighted ? TRAM_SPRITE_SIZE_HIGHLIGHTED : TRAM_SPRITE_SIZE
   const oc = new OffscreenCanvas(size, size)
   const ctx = oc.getContext('2d')!
   const cx = size / 2
   const cy = size / 2
-  const scale = size / 24
+  const scale = size / TRAM_SPRITE_SIZE
 
   ctx.save()
   ctx.translate(cx, cy)
@@ -107,7 +108,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       const positions = positionsRef.current
       if (!positions) return null
       let bestId: string | null = null
-      let bestDist = 16 * 16
+      let bestDist = TRAM_HIT_TEST_RADIUS_SQ
       for (const [id, pos] of positions) {
         const pt = map.latLngToContainerPoint([pos.lat, pos.lng])
         const dx = pt.x - x

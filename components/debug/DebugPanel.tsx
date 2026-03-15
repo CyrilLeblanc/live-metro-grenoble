@@ -10,7 +10,13 @@ import ManualGraphEditor, { Pt } from './ManualGraphEditor'
 import SpeedGraph from './SpeedGraph'
 import EditableSpeed from './EditableSpeed'
 
-/** Precompute tSec→meters table by integrating the speed profile. */
+/**
+ * Precomputes a tSec→metres lookup table by numerically integrating the speed profile.
+ * Uses the trapezoidal rule with 0.25 s steps. The resulting table maps each countdown
+ * value (tSec counts down from duration to 0) to the cumulative distance travelled.
+ * This allows the playback dot to move at the speed shown in the graph rather than
+ * at a uniform rate.
+ */
 function buildPositionTable(rec: SpeedGraphRecord): Array<{ tSec: number; meters: number }> {
   const STEP = 0.25
   const dur = rec.totalDurationSec
@@ -72,7 +78,12 @@ function formatDate(ts: number): string {
   return `${dd}/${mm} ${hh}:${min}`
 }
 
-// Bell curve to pre-populate the manual editor
+/**
+ * Generates a Gaussian (bell curve) speed profile for initializing the manual editor.
+ * Models realistic tram behaviour: accelerate from stop, cruise at peak speed, decelerate
+ * to next stop. The curve is sampled at N evenly-spaced points with σ=0.2 centred at 50%.
+ * First and last points are forced to zero speed (stopped at stations).
+ */
 function bellCurve(durationSec: number, peakSpeedMs: number): Array<{ tSec: number; speedMs: number }> {
   const N = 13
   const pts = []

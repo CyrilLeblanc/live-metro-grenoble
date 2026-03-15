@@ -34,7 +34,7 @@ export function useGtfsData(): GtfsData {
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
-    async function load() {
+    async function fetchAndTransformGtfs() {
       const { routes, trips, shapes, stops, stopTimes, segmentPaths: segPathsRaw } = await fetchGtfsStatic()
       const segPaths = new Map(Object.entries(segPathsRaw))
 
@@ -138,7 +138,7 @@ export function useGtfsData(): GtfsData {
 
       setDataLoaded(true)
     }
-    load()
+    fetchAndTransformGtfs()
   }, [])
 
   return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded }
