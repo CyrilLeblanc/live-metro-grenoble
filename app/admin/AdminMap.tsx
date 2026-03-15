@@ -120,17 +120,39 @@ function applyJoin(poly: LatLng[], coords: LatLng[], action: JoinAction): LatLng
 }
 
 /**
- * Assembles a set of ways into a single continuous polyline using a
- * greedy nearest-neighbour algorithm.
+ * Assembles a set of ways into a single continuous polyline.
  *
- * At each step it picks the remaining way whose any endpoint is closest
- * to either end of the current polyline, then joins it in the best
- * orientation. This handles both single-click additions and batch
- * selection (e.g. all ways of a relation added at once).
+ * Uses a greedy nearest-neighbour algorithm with direction-continuity
+ * scoring: at each step, the candidate score is `distance × penalty`
+ * where the penalty grows as the joining angle increases (up to 6×
+ * for a full U-turn). This prevents the algorithm from choosing a
+ * branching or looping way when a straight-ahead way is available
+ * nearby, which was the cause of the mid-route loops.
  */
 function assembleWays(ways: OsmWay[]): LatLng[] {
   if (ways.length === 0) return []
   if (ways.length === 1) return [...ways[0].coords]
+
+  // Direction vector from point a to point b
+  type Dir = { dlat: number; dlng: number }
+  const dir = (a: LatLng, b: LatLng): Dir => ({ dlat: b.lat - a.lat, dlng: b.lng - a.lng })
+
+  // Score = dist × penalty.
+  // penalty = 1 when the candidate way continues in the same direction
+  // (cos ≈ 1), rising to 6× for a direct U-turn (cos = -1).
+  // "incomingDir" is the direction the candidate way enters the junction.
+  // "existingDir" is the direction the polyline is already travelling at
+  // that junction — they should be aligned for a smooth continuation.
+  const score = (dist: number, incomingDir: Dir | null, existingDir: Dir | null): number => {
+    if (!incomingDir || !existingDir) return dist
+    const wLen = Math.hypot(incomingDir.dlat, incomingDir.dlng)
+    const pLen = Math.hypot(existingDir.dlat, existingDir.dlng)
+    if (wLen === 0 || pLen === 0) return dist
+    const cos =
+      (incomingDir.dlat * existingDir.dlat + incomingDir.dlng * existingDir.dlng) / (wLen * pLen)
+    const penalty = cos < 0 ? 1 + (-cos) * 5 : 1
+    return dist * penalty
+  }
 
   const remaining = [...ways]
   let poly: LatLng[] = [...remaining.splice(0, 1)[0].coords]
@@ -138,26 +160,33 @@ function assembleWays(ways: OsmWay[]): LatLng[] {
   while (remaining.length > 0) {
     const polyStart = poly[0]
     const polyEnd = poly[poly.length - 1]
+    // Direction the polyline is travelling AT its end and its start
+    const endDir: Dir | null = poly.length >= 2 ? dir(poly[poly.length - 2], poly[poly.length - 1]) : null
+    // At the start, "travel direction" for prepending is backward (away from poly[1])
+    const startDir: Dir | null = poly.length >= 2 ? dir(poly[1], poly[0]) : null
 
     let bestIdx = 0
-    let bestDist = Infinity
+    let bestScore = Infinity
     let bestAction: JoinAction = 'appendFwd'
 
     for (let i = 0; i < remaining.length; i++) {
       const c = remaining[i].coords
-      const wStart = c[0]
-      const wEnd = c[c.length - 1]
+      const n = c.length
 
       const opts: [number, JoinAction][] = [
-        [distLatLng(polyEnd, wStart), 'appendFwd'],
-        [distLatLng(polyEnd, wEnd), 'appendRev'],
-        [distLatLng(polyStart, wEnd), 'prependFwd'],
-        [distLatLng(polyStart, wStart), 'prependRev'],
+        // appendFwd: way enters polyEnd going c[0]→c[1]
+        [score(distLatLng(polyEnd, c[0]), n >= 2 ? dir(c[0], c[1]) : null, endDir), 'appendFwd'],
+        // appendRev: reversed way enters polyEnd going c[n-1]→c[n-2]
+        [score(distLatLng(polyEnd, c[n - 1]), n >= 2 ? dir(c[n - 1], c[n - 2]) : null, endDir), 'appendRev'],
+        // prependFwd: way exits toward polyStart at c[n-2]→c[n-1]
+        [score(distLatLng(polyStart, c[n - 1]), n >= 2 ? dir(c[n - 2], c[n - 1]) : null, startDir), 'prependFwd'],
+        // prependRev: reversed way exits toward polyStart at c[1]→c[0]
+        [score(distLatLng(polyStart, c[0]), n >= 2 ? dir(c[1], c[0]) : null, startDir), 'prependRev'],
       ]
 
-      for (const [d, action] of opts) {
-        if (d < bestDist) {
-          bestDist = d
+      for (const [s, action] of opts) {
+        if (s < bestScore) {
+          bestScore = s
           bestIdx = i
           bestAction = action
         }
