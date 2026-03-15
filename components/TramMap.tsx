@@ -162,13 +162,13 @@ export default function TramMap() {
       >
         <TileLayer
           url="/api/tiles/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
         {lineShapes.map(({ route, points }) => (
           <Polyline
             key={`${route.route_id}-${points[0]?.shape_id}`}
             positions={points.map(p => [p.shape_pt_lat, p.shape_pt_lon])}
-            pathOptions={{ color: `#${route.route_color}`, weight: 4 }}
+            pathOptions={{ color: `#${route.route_color}`, weight: 1 }}
+            smoothFactor={0.1}
           />
         ))}
         {userPosition && (
