@@ -1,5 +1,6 @@
 'use client'
 
+import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type L from 'leaflet'
 import type { Cluster } from '../../lib/gtfs'
