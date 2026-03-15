@@ -130,6 +130,14 @@ export function getClusterId(stop: Stop): string {
   return stop.parent_station || stop.stop_id
 }
 
+/**
+ * Strips the agency prefix (e.g. "SEM:") from upstream IDs like "SEM:T1234".
+ * If no colon-separated prefix is present, returns the ID unchanged.
+ */
+export function stripAgencyPrefix(rawId: string): string {
+  return rawId.includes(':') ? rawId.split(':').slice(1).join(':') : rawId
+}
+
 import { LatLng } from './geo'
 
 let segmentPathsCache: Map<string, LatLng[]> | null = null

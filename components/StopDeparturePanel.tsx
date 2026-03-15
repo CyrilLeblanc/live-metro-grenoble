@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Stop } from '../lib/gtfs'
+import { Stop, stripAgencyPrefix } from '../lib/gtfs'
 import { fetchStopTimes } from '../lib/api'
 import { PANEL_BG, PANEL_BORDER, ACCENT_BLUE } from '../lib/config'
+import { formatEta } from '../lib/format'
 
 interface Props {
   stop: Stop
@@ -29,10 +30,7 @@ function formatHHMM(unixSecs: number): string {
 }
 
 function formatRelative(unixSecs: number): string {
-  const diffSecs = unixSecs - Date.now() / 1000
-  if (diffSecs <= 0) return 'now'
-  const mins = Math.round(diffSecs / 60)
-  return mins < 1 ? '< 1 min' : `in ${mins} min`
+  return formatEta(unixSecs - Date.now() / 1000)
 }
 
 function getRouteShortName(patternId: string, tramRouteIds: Set<string>): string {
@@ -72,7 +70,7 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
         }
         for (const t of g.times) {
           const depSecs = t.realtime ? t.realtimeDeparture : t.scheduledDeparture
-          const tripId = t.tripId.includes(':') ? t.tripId.split(':').slice(1).join(':') : t.tripId
+          const tripId = stripAgencyPrefix(t.tripId)
           all.push({
             time: t.serviceDay + depSecs,
             realtime: t.realtime,

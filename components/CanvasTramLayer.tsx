@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react'
 import { useMap } from 'react-leaflet'
 import type { AnimatedPosition } from '../hooks/useAnimatedTrams'
 import { TramMarkerData } from '../lib/geo'
+import { createMapCanvas } from '../lib/canvasLayer'
 
 interface Props {
   tramMarkers: TramMarkerData[]
@@ -58,14 +59,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
   useEffect(() => { opacityRef.current = opacity }, [opacity])
 
   useEffect(() => {
-    const container = map.getContainer()
-    const canvas = document.createElement('canvas')
-    canvas.style.position = 'absolute'
-    canvas.style.top = '0'
-    canvas.style.left = '0'
-    canvas.style.pointerEvents = 'auto'
-    canvas.style.zIndex = '650'
-    container.appendChild(canvas)
+    const { canvas, cleanup: cleanupCanvas } = createMapCanvas(map, { zIndex: '650', pointerEvents: true })
 
     const spriteCache = new Map<string, OffscreenCanvas>()
 
@@ -74,16 +68,6 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       if (!spriteCache.has(key)) spriteCache.set(key, buildSprite(color, highlighted))
       return spriteCache.get(key)!
     }
-
-    function resize() {
-      const size = map.getSize()
-      canvas.width = size.x
-      canvas.height = size.y
-    }
-    resize()
-    map.on('resize', resize)
-    map.on('zoomend', resize)
-    map.on('moveend', resize)
 
     let rafId: number
 
@@ -176,10 +160,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       cancelAnimationFrame(rafId)
       canvas.removeEventListener('click', onClick)
       canvas.removeEventListener('mousemove', onMouseMove)
-      map.off('resize', resize)
-      map.off('zoomend', resize)
-      map.off('moveend', resize)
-      container.removeChild(canvas)
+      cleanupCanvas()
     }
   }, [map]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -10,7 +10,7 @@
  */
 
 import { interpolatePosition } from '../../../lib/interpolator'
-import { loadRoutes, loadTrips, loadShapes, loadStops, loadStopTimes, getClusterId, Route, Stop, Trip, StopTime, ShapePoint } from '../../../lib/gtfs'
+import { loadRoutes, loadTrips, loadShapes, loadStops, loadStopTimes, getClusterId, stripAgencyPrefix, Route, Stop, Trip, StopTime, ShapePoint } from '../../../lib/gtfs'
 import { UPSTREAM_API_BASE } from '../../../lib/config'
 
 interface GtfsIndex {
@@ -132,8 +132,8 @@ async function fetchTramPositions(): Promise<TramPosition[]> {
       const headsign = group.pattern.desc
       for (const time of group.times) {
         const { tripId: rawTripId, stopId: rawStopId, realtimeDeparture, serviceDay, realtime } = time
-        const tripId = rawTripId.includes(':') ? rawTripId.split(':').slice(1).join(':') : rawTripId
-        const stopId = rawStopId.includes(':') ? rawStopId.split(':').slice(1).join(':') : rawStopId
+        const tripId = stripAgencyPrefix(rawTripId)
+        const stopId = stripAgencyPrefix(rawStopId)
 
         if (seenTrips.has(tripId)) continue
 

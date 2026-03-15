@@ -3,30 +3,14 @@
 import { useEffect } from 'react'
 import { useMap } from 'react-leaflet'
 import { useDebugContext } from '../../contexts/DebugContext'
+import { createMapCanvas } from '../../lib/canvasLayer'
 
 export default function DebugPlaybackLayer() {
   const map = useMap()
   const { playbackPositionRef } = useDebugContext()
 
   useEffect(() => {
-    const container = map.getContainer()
-    const canvas = document.createElement('canvas')
-    canvas.style.position = 'absolute'
-    canvas.style.top = '0'
-    canvas.style.left = '0'
-    canvas.style.pointerEvents = 'none'
-    canvas.style.zIndex = '660'
-    container.appendChild(canvas)
-
-    function resize() {
-      const size = map.getSize()
-      canvas.width = size.x
-      canvas.height = size.y
-    }
-    resize()
-    map.on('resize', resize)
-    map.on('zoomend', resize)
-    map.on('moveend', resize)
+    const { canvas, cleanup: cleanupCanvas } = createMapCanvas(map, { zIndex: '660' })
 
     let rafId: number
 
@@ -56,10 +40,7 @@ export default function DebugPlaybackLayer() {
 
     return () => {
       cancelAnimationFrame(rafId)
-      map.off('resize', resize)
-      map.off('zoomend', resize)
-      map.off('moveend', resize)
-      container.removeChild(canvas)
+      cleanupCanvas()
     }
   }, [map]) // eslint-disable-line react-hooks/exhaustive-deps
 

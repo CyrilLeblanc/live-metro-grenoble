@@ -13,13 +13,7 @@ import { useEffect, useRef, useState } from 'react'
 import { POLLING_INTERVAL_MS, COUNTDOWN_START_S } from '../lib/config'
 import { TramApiItem } from './useAnimatedTrams'
 import { TramMarkerData } from '../lib/geo'
-
-/** Formats an ETA in seconds into a human-readable string. */
-function formatEta(secs: number): string {
-  if (secs <= 0) return 'arriving'
-  const mins = Math.round(secs / 60)
-  return mins < 1 ? '< 1 min' : `in ${mins} min`
-}
+import { formatEta } from '../lib/format'
 
 export interface PollingData {
   apiTrams: TramApiItem[]
