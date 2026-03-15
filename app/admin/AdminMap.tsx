@@ -8,7 +8,6 @@ import type { LatLng } from '../../lib/geo'
 import { makeSegmentKey } from '../../lib/geo'
 import { GRENOBLE_CENTER, GRENOBLE_BOUNDS } from '../../lib/config'
 import { fetchGtfsStatic } from '../../lib/api'
-import type { Route, TripClient } from '../../lib/gtfs'
 import { getClusterId } from '../../lib/gtfs'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,6 +140,10 @@ function joinWay(assembledPolyline: LatLng[], way: OsmWay): LatLng[] {
   candidates.sort((a, b) => a.dist - b.dist)
   return candidates[0].fn()
 }
+
+// ─── Module-level Overpass cache ──────────────────────────────────────────────
+// Persists across component re-mounts within a browser session.
+let overpassCache: OsmWay[] | null = null
 
 // ─── Colour helpers ────────────────────────────────────────────────────────────
 
@@ -294,7 +297,9 @@ export default function AdminMap() {
   async function loadTripsData() {
     setStatus('Chargement des trips…')
     try {
-      const { routes, trips, stops, stopTimes } = await fetchGtfsStatic()
+      // routes, stops, stopTimes come from the bundle; trips come from raw file
+      // because TripClient (bundle) strips direction_id and trip_headsign
+      const { routes, stops, stopTimes } = await fetchGtfsStatic()
 
       const colorMap = new Map<string, string>()
       const nameMap = new Map<string, string>()
@@ -304,26 +309,25 @@ export default function AdminMap() {
       }
       setRouteColorMap(colorMap)
 
-      // Fetch raw trips.json for trip_headsign (not in the trimmed bundle)
-      let rawTrips: Array<{ trip_id: string; route_id: string; direction_id: string; trip_headsign?: string; shape_id: string }> = []
+      // Fetch raw trips.json — has direction_id and trip_headsign
+      type RawTrip = { trip_id: string; route_id: string; direction_id: string; trip_headsign?: string; shape_id: string }
+      let rawTrips: RawTrip[] = []
       try {
         const res = await fetch('/gtfs/trips.json')
         if (res.ok) rawTrips = await res.json()
       } catch { /* ignore */ }
 
-      const headsignMap = new Map<string, string>()
-      for (const t of rawTrips) headsignMap.set(t.trip_id, t.trip_headsign ?? '')
-
       // Deduplicate by (route_id, direction_id, trip_headsign)
       const seen = new Map<string, TripEntry>()
-      for (const t of trips as TripClient[]) {
-        const headsign = headsignMap.get(t.trip_id) ?? ''
-        const key = `${t.route_id}|${(t as unknown as { direction_id?: number }).direction_id ?? 0}|${headsign}`
+      for (const t of rawTrips) {
+        const dirId = parseInt(t.direction_id, 10) || 0
+        const headsign = t.trip_headsign ?? ''
+        const key = `${t.route_id}|${dirId}|${headsign}`
         if (!seen.has(key)) {
           seen.set(key, {
             key,
             route_id: t.route_id,
-            direction_id: (t as unknown as { direction_id?: number }).direction_id ?? 0,
+            direction_id: dirId,
             trip_headsign: headsign,
             trip_id: t.trip_id,
             route_short_name: nameMap.get(t.route_id) ?? t.route_id,
@@ -382,39 +386,35 @@ export default function AdminMap() {
     }
   }, [clusters, mode])
 
-  // ── Render OSM ways (step 2) ─────────────────────────────────────────────────
+  // ── Create OSM way layers once (when osmWays changes) ───────────────────────
+  // Separated from style-update so layers are never recreated on selection
+  // change — recreating would race with the click event causing untoggle to fail.
   useEffect(() => {
     const L = leafletRef.current
     const map = mapRef.current
-    if (!L || !map || mode !== 'segments' || segStep !== 2) return
+    if (!L || !map || mode !== 'segments') return
 
-    // Clear old way layers
     wayLayersRef.current.forEach((l) => l.remove())
     wayLayersRef.current.clear()
 
-    const color = selectedTrip ? hexColor(selectedTrip.route_color) : '#0074d9'
-
     for (const way of osmWays) {
-      const isSelected = selectedWayIds.has(way.id)
       const line = L.polyline(
         way.coords.map((p) => [p.lat, p.lng] as [number, number]),
-        {
-          color: isSelected ? color : '#999',
-          weight: isSelected ? 5 : 3,
-          opacity: 1,
-        }
+        { color: '#999', weight: 3, opacity: 1 }
       ).addTo(map)
 
-      line.on('mouseover', () => { if (!isSelected) line.setStyle({ opacity: 0.5 }) })
-      line.on('mouseout', () => { if (!isSelected) line.setStyle({ opacity: 1 }) })
-      line.on('click', () => {
+      line.on('mouseover', () => {
+        if (!selectedWayIds.has(way.id)) line.setStyle({ opacity: 0.5 })
+      })
+      line.on('mouseout', () => {
+        if (!selectedWayIds.has(way.id)) line.setStyle({ opacity: 1 })
+      })
+      line.on('click', (e) => {
+        e.originalEvent?.stopPropagation()
         setSelectedWayIds((prev) => {
           const next = new Set(prev)
-          if (next.has(way.id)) {
-            next.delete(way.id)
-          } else {
-            next.add(way.id)
-          }
+          if (next.has(way.id)) next.delete(way.id)
+          else next.add(way.id)
           return next
         })
       })
@@ -426,7 +426,20 @@ export default function AdminMap() {
       wayLayersRef.current.forEach((l) => l.remove())
       wayLayersRef.current.clear()
     }
-  }, [osmWays, selectedWayIds, selectedTrip, mode, segStep])
+  }, [osmWays, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Update way styles imperatively when selection changes ────────────────────
+  useEffect(() => {
+    const routeColor = selectedTrip ? hexColor(selectedTrip.route_color) : '#0074d9'
+    for (const [wayId, line] of wayLayersRef.current) {
+      const isSelected = selectedWayIds.has(wayId)
+      line.setStyle({
+        color: isSelected ? routeColor : '#999',
+        weight: isSelected ? 5 : 3,
+        opacity: 1,
+      })
+    }
+  }, [selectedWayIds, selectedTrip])
 
   // ── Rebuild assembled polyline whenever selection changes ────────────────────
   useEffect(() => {
@@ -577,10 +590,17 @@ export default function AdminMap() {
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   async function loadOsmWays() {
+    if (overpassCache) {
+      setOsmWays(overpassCache)
+      setStatus(`${overpassCache.length} voies OSM (cache)`)
+      return
+    }
+
     setStatus('Chargement des voies OSM…')
     const bounds = GRENOBLE_BOUNDS as [[number, number], [number, number]]
     const bbox = `${bounds[0][0]},${bounds[0][1]},${bounds[1][0]},${bounds[1][1]}`
-    const q = `[out:json];way[railway=tram](${bbox});(._;>;);out geom;`
+    // "out geom" inlines coordinates directly on each way — no need for (._;>;)
+    const q = `[out:json];way[railway=tram](${bbox});out geom;`
 
     try {
       const res = await fetch(`/api/admin/overpass?q=${encodeURIComponent(q)}`)
@@ -595,6 +615,7 @@ export default function AdminMap() {
         }))
         .filter((w: OsmWay) => w.coords.length > 1)
 
+      overpassCache = ways
       setOsmWays(ways)
       setStatus(`${ways.length} voies OSM chargées`)
     } catch (e) {
