@@ -97,10 +97,12 @@ export const TRAM_SPRITE_SIZE_HIGHLIGHTED = 32
 export const TRAM_HIT_TEST_RADIUS_SQ = 16 * 16
 
 /**
- * Physical distance between consecutive wagon centres along the polyline (metres).
- * At zoom 15 (~45°N) this corresponds to roughly 10–12 logical pixels.
+ * Centre-to-centre wagon spacing expressed as a fraction of the logical sprite size.
+ * Multiplied by metres-per-pixel at the current zoom in the draw loop so that wagons
+ * always appear visually adjacent regardless of zoom level.
+ * 0.82 × 24 px ≈ 19.7 px gap → wagons overlap by ~4 px and look like a connected train.
  */
-export const WAGON_GAP_M = 35
+export const WAGON_SCREEN_GAP_FACTOR = 0.82
 
 // ---------------------------------------------------------------------------
 // Upstream API timeouts and caching

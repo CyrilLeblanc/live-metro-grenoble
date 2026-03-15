@@ -4,7 +4,17 @@ import { useMap } from 'react-leaflet'
 import type { AnimatedPosition } from '../hooks/useAnimatedTrams'
 import { TramMarkerData } from '../lib/geo'
 import { createMapCanvas } from '../lib/canvasLayer'
-import { TRAM_SPRITE_SIZE, TRAM_SPRITE_SIZE_HIGHLIGHTED, TRAM_HIT_TEST_RADIUS_SQ } from '../lib/config'
+import { TRAM_SPRITE_SIZE, TRAM_SPRITE_SIZE_HIGHLIGHTED, TRAM_HIT_TEST_RADIUS_SQ, WAGON_SCREEN_GAP_FACTOR } from '../lib/config'
+import { positionAtProgress, bearingAtProgress } from '../lib/pathUtils'
+
+/**
+ * Metres per logical pixel at a given zoom level and latitude.
+ * Uses the Web Mercator ground-resolution formula:
+ *   resolution = (2π × R_earth × cos(φ)) / (256 × 2^zoom)
+ */
+function metersPerPixel(zoom: number, latDeg: number): number {
+  return (2 * Math.PI * 6378137 * Math.cos(latDeg * (Math.PI / 180))) / (256 * Math.pow(2, zoom))
+}
 
 interface Props {
   tramMarkers: TramMarkerData[]
@@ -164,24 +174,37 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       const highlighted = highlightedRef.current
       const markers = tramMarkersRef.current
 
+      // Compute a zoom-adaptive metre gap once per frame so every wagon on every
+      // tram uses the same screen-space spacing.  The gap is expressed in logical
+      // pixels (WAGON_SCREEN_GAP_FACTOR × spriteSize) and then converted to metres
+      // using the current zoom resolution, so wagons appear visually connected at
+      // any zoom level instead of spreading apart when zoomed in.
+      const zoom = map.getZoom()
+      const mpp = metersPerPixel(zoom, map.getCenter().lat)
+      const wagonGapNormal = TRAM_SPRITE_SIZE * WAGON_SCREEN_GAP_FACTOR * mpp
+      const wagonGapHighlighted = TRAM_SPRITE_SIZE_HIGHLIGHTED * WAGON_SCREEN_GAP_FACTOR * mpp
+
       for (const marker of markers) {
         const pos = positions.get(marker.id)
         if (!pos) continue
 
         const isHighlighted = highlighted !== null && marker.id.startsWith(highlighted + '-')
         const logicalSize = isHighlighted ? TRAM_SPRITE_SIZE_HIGHLIGHTED : TRAM_SPRITE_SIZE
+        const wagonGapM = isHighlighted ? wagonGapHighlighted : wagonGapNormal
         const alpha = (marker.isRealtime ? 1 : 0.5) * opacityRef.current
 
         // Draw body wagons first (behind the head) — furthest first so head is on top
-        if (pos.wagons) {
-          for (let wi = pos.wagons.length - 1; wi >= 0; wi--) {
-            const wagon = pos.wagons[wi]
-            const wagonPt = map.latLngToContainerPoint([wagon.lat, wagon.lng])
+        if (pos.path && pos.pathLengths && pos.progressMeters !== undefined) {
+          for (let wi = 1; wi >= 0; wi--) {
+            const wProgress = Math.max(0, pos.progressMeters - (wi + 1) * wagonGapM)
+            const wPos = positionAtProgress(pos.path, pos.pathLengths, wProgress)
+            const wBearing = bearingAtProgress(pos.path, pos.pathLengths, wProgress)
+            const wagonPt = map.latLngToContainerPoint([wPos.lat, wPos.lng])
             const sprite = getSprite(marker.color, marker.line, wi + 1, isHighlighted)
             ctx.save()
             ctx.globalAlpha = alpha
             ctx.translate(wagonPt.x, wagonPt.y)
-            ctx.rotate((wagon.bearing * Math.PI) / 180)
+            ctx.rotate((wBearing * Math.PI) / 180)
             // Always pass logical size as destination dimensions, never the physical sprite size
             ctx.drawImage(sprite, -logicalSize / 2, -logicalSize / 2, logicalSize, logicalSize)
             ctx.restore()

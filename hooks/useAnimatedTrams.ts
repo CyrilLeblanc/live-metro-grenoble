@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { haversineDistance, makeSegmentKey, AveragedGraph, LatLng } from '../lib/geo'
-import { DECEL_THRESHOLD, MAX_SPEED, MIN_ELAPSED_FOR_SPEED, WAGON_GAP_M } from '../lib/config'
+import { DECEL_THRESHOLD, MAX_SPEED, MIN_ELAPSED_FOR_SPEED } from '../lib/config'
 import { interpolateSpeed } from '../lib/speedUtils'
 import { buildPathLengths, findProgressOnPath, positionAtProgress, bearingAtProgress } from '../lib/pathUtils'
 
@@ -18,19 +18,20 @@ export interface TramApiItem {
   isRealtime: boolean
 }
 
-export interface WagonPosition {
-  lat: number
-  lng: number
-  bearing: number
-}
-
 export interface AnimatedPosition {
   lat: number
   lng: number
   bearing: number
-  /** Body wagon positions, ordered from closest to furthest behind the head.
-   *  Only present when the tram has a shape path to rewind along. */
-  wagons?: WagonPosition[]
+  /**
+   * Polyline path for this segment (reference — not copied).
+   * Exposed so the draw loop can compute zoom-adaptive wagon positions without
+   * a fixed metre gap that would grow in screen-pixels as the user zooms in.
+   */
+  path?: LatLng[]
+  /** Cumulative distances array matching path (reference — not copied). */
+  pathLengths?: number[]
+  /** Head position along the path in metres (used to rewind to body wagons). */
+  progressMeters?: number
 }
 
 /** Per-tram mutable animation state, updated each API tick and each rAF frame. */
@@ -211,22 +212,15 @@ export function useAnimatedTrams(
         const pos = positionAtProgress(state.path, state.pathLengths, state.progressMeters)
         const bearing = bearingAtProgress(state.path, state.pathLengths, state.progressMeters)
 
-        // Compute body wagon positions by rewinding along the polyline
-        const w1Progress = Math.max(0, state.progressMeters - WAGON_GAP_M)
-        const w2Progress = Math.max(0, state.progressMeters - 2 * WAGON_GAP_M)
-        const w1Pos = positionAtProgress(state.path, state.pathLengths, w1Progress)
-        const w2Pos = positionAtProgress(state.path, state.pathLengths, w2Progress)
-        const w1Bearing = bearingAtProgress(state.path, state.pathLengths, w1Progress)
-        const w2Bearing = bearingAtProgress(state.path, state.pathLengths, w2Progress)
-
+        // Store path reference + current progress so the draw loop can compute
+        // zoom-adaptive wagon positions (gap in pixels, not fixed metres).
         positionsRef.current.set(id, {
           lat: pos.lat,
           lng: pos.lng,
           bearing,
-          wagons: [
-            { lat: w1Pos.lat, lng: w1Pos.lng, bearing: w1Bearing },
-            { lat: w2Pos.lat, lng: w2Pos.lng, bearing: w2Bearing },
-          ],
+          path: state.path,
+          pathLengths: state.pathLengths,
+          progressMeters: state.progressMeters,
         })
       }
       rafRef.current = requestAnimationFrame(animationFrame)
