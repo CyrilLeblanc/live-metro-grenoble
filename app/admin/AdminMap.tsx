@@ -78,7 +78,7 @@ function projectPointOnPolyline(
   return best
 }
 
-// ─── Way joining logic ─────────────────────────────────────────────────────────
+// ─── Way assembly logic ────────────────────────────────────────────────────────
 
 function distLatLng(a: LatLng, b: LatLng): number {
   return Math.hypot(a.lat - b.lat, a.lng - b.lng)
@@ -94,63 +94,81 @@ function findOverlapJunction(p: LatLng, polyline: LatLng[]): number {
   return -1
 }
 
+type JoinAction = 'appendFwd' | 'appendRev' | 'prependFwd' | 'prependRev'
+
+function applyJoin(poly: LatLng[], coords: LatLng[], action: JoinAction): LatLng[] {
+  switch (action) {
+    case 'appendFwd': {
+      const idx = findOverlapJunction(poly[poly.length - 1], coords)
+      return [...poly, ...(idx >= 0 ? coords.slice(idx + 1) : coords)]
+    }
+    case 'appendRev': {
+      const rev = [...coords].reverse()
+      const idx = findOverlapJunction(poly[poly.length - 1], rev)
+      return [...poly, ...(idx >= 0 ? rev.slice(idx + 1) : rev)]
+    }
+    case 'prependFwd': {
+      const idx = findOverlapJunction(poly[0], coords)
+      return [...(idx >= 0 ? coords.slice(0, idx) : coords), ...poly]
+    }
+    case 'prependRev': {
+      const rev = [...coords].reverse()
+      const idx = findOverlapJunction(poly[0], rev)
+      return [...(idx >= 0 ? rev.slice(0, idx) : rev), ...poly]
+    }
+  }
+}
+
 /**
- * Appends `way` to the existing `assembledPolyline`.
- * - Tries all 4 endpoint combos (way forward/reversed vs polyline start/end).
- * - Picks the combo with minimum junction gap.
- * - Handles partial overlap by trimming the way from the overlap junction.
- * Returns the new full polyline.
+ * Assembles a set of ways into a single continuous polyline using a
+ * greedy nearest-neighbour algorithm.
+ *
+ * At each step it picks the remaining way whose any endpoint is closest
+ * to either end of the current polyline, then joins it in the best
+ * orientation. This handles both single-click additions and batch
+ * selection (e.g. all ways of a relation added at once).
  */
-function joinWay(assembledPolyline: LatLng[], way: OsmWay): LatLng[] {
-  if (assembledPolyline.length === 0) return [...way.coords]
+function assembleWays(ways: OsmWay[]): LatLng[] {
+  if (ways.length === 0) return []
+  if (ways.length === 1) return [...ways[0].coords]
 
-  const wayFwd = way.coords
-  const wayRev = [...way.coords].reverse()
+  const remaining = [...ways]
+  let poly: LatLng[] = [...remaining.splice(0, 1)[0].coords]
 
-  const polyStart = assembledPolyline[0]
-  const polyEnd = assembledPolyline[assembledPolyline.length - 1]
+  while (remaining.length > 0) {
+    const polyStart = poly[0]
+    const polyEnd = poly[poly.length - 1]
 
-  const candidates: Array<{ dist: number; fn: () => LatLng[] }> = [
-    // Append way-forward to polyline end
-    {
-      dist: distLatLng(polyEnd, wayFwd[0]),
-      fn: () => {
-        const overlapIdx = findOverlapJunction(polyEnd, wayFwd)
-        const slice = overlapIdx >= 0 ? wayFwd.slice(overlapIdx + 1) : wayFwd
-        return [...assembledPolyline, ...slice]
-      },
-    },
-    // Append way-reversed to polyline end
-    {
-      dist: distLatLng(polyEnd, wayRev[0]),
-      fn: () => {
-        const overlapIdx = findOverlapJunction(polyEnd, wayRev)
-        const slice = overlapIdx >= 0 ? wayRev.slice(overlapIdx + 1) : wayRev
-        return [...assembledPolyline, ...slice]
-      },
-    },
-    // Prepend way-forward before polyline start
-    {
-      dist: distLatLng(wayFwd[wayFwd.length - 1], polyStart),
-      fn: () => {
-        const overlapIdx = findOverlapJunction(polyStart, wayFwd)
-        const slice = overlapIdx >= 0 ? wayFwd.slice(0, overlapIdx) : wayFwd
-        return [...slice, ...assembledPolyline]
-      },
-    },
-    // Prepend way-reversed before polyline start
-    {
-      dist: distLatLng(wayRev[wayRev.length - 1], polyStart),
-      fn: () => {
-        const overlapIdx = findOverlapJunction(polyStart, wayRev)
-        const slice = overlapIdx >= 0 ? wayRev.slice(0, overlapIdx) : wayRev
-        return [...slice, ...assembledPolyline]
-      },
-    },
-  ]
+    let bestIdx = 0
+    let bestDist = Infinity
+    let bestAction: JoinAction = 'appendFwd'
 
-  candidates.sort((a, b) => a.dist - b.dist)
-  return candidates[0].fn()
+    for (let i = 0; i < remaining.length; i++) {
+      const c = remaining[i].coords
+      const wStart = c[0]
+      const wEnd = c[c.length - 1]
+
+      const opts: [number, JoinAction][] = [
+        [distLatLng(polyEnd, wStart), 'appendFwd'],
+        [distLatLng(polyEnd, wEnd), 'appendRev'],
+        [distLatLng(polyStart, wEnd), 'prependFwd'],
+        [distLatLng(polyStart, wStart), 'prependRev'],
+      ]
+
+      for (const [d, action] of opts) {
+        if (d < bestDist) {
+          bestDist = d
+          bestIdx = i
+          bestAction = action
+        }
+      }
+    }
+
+    const [way] = remaining.splice(bestIdx, 1)
+    poly = applyJoin(poly, way.coords, bestAction)
+  }
+
+  return poly
 }
 
 // ─── Module-level Overpass cache ──────────────────────────────────────────────
@@ -505,13 +523,8 @@ export default function AdminMap() {
 
   // ── Rebuild assembled polyline whenever selection changes ────────────────────
   useEffect(() => {
-    let poly: LatLng[] = []
-    for (const way of osmWays) {
-      if (selectedWayIds.has(way.id)) {
-        poly = joinWay(poly, way)
-      }
-    }
-    setAssembledPolyline(poly)
+    const selectedWays = osmWays.filter((w) => selectedWayIds.has(w.id))
+    setAssembledPolyline(assembleWays(selectedWays))
   }, [selectedWayIds, osmWays])
 
   // ── Render assembled polyline ────────────────────────────────────────────────
