@@ -4,8 +4,8 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
-import { makeSegmentKey, AveragedGraph } from '../lib/geo'
-import { GRENOBLE_CENTER, GRENOBLE_BOUNDS } from '../lib/config'
+import { makeSegmentKey, AveragedGraph, TramMarkerData } from '../lib/geo'
+import { GRENOBLE_CENTER, GRENOBLE_BOUNDS, PANEL_BG, PANEL_BORDER, ACCENT_BLUE } from '../lib/config'
 import { useGtfsData } from '../hooks/useGtfsData'
 import { usePolling } from '../hooks/usePolling'
 import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
@@ -13,7 +13,7 @@ import { useUserOnTram } from '../hooks/useUserOnTram'
 import { useUserLocation } from '../hooks/useUserLocation'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
-import CanvasTramLayer, { TramMarkerData } from './CanvasTramLayer'
+import CanvasTramLayer from './CanvasTramLayer'
 import OnTramOverlay from './OnTramOverlay'
 import UserLocationMarker from './UserLocationMarker'
 import { Stop } from '../lib/gtfs'
@@ -128,7 +128,7 @@ export default function TramMap() {
 
   // GPS user-on-tram tracking
   // positionsRef is needed before useAnimatedTrams — use a stable ref that gets populated
-  const positionsPlaceholderRef = useRef<Map<string, import('../hooks/useAnimatedTrams').TramPosition>>(new Map())
+  const positionsPlaceholderRef = useRef<Map<string, import('../hooks/useAnimatedTrams').AnimatedPosition>>(new Map())
 
   const {
     isTracking,
@@ -162,13 +162,13 @@ export default function TramMap() {
   return (
     <div style={{ height: '100vh', position: 'relative' }}>
       {dataLoaded && (
-        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#343139', color: '#ffffff', border: '1px solid #3d3a41' }}
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: PANEL_BG, color: '#ffffff', border: `1px solid ${PANEL_BORDER}` }}
              className="flex items-center gap-2 rounded px-2 py-1 text-sm shadow font-medium w-fit">
           <span style={{ color: 'rgba(255,255,255,0.6)' }}>{secondsLeft}s</span>
           <button
             onClick={refresh}
             className="flex items-center justify-center"
-            style={{ color: '#96dbeb' }}
+            style={{ color: ACCENT_BLUE }}
             title="Force reload"
             aria-label="Force reload"
           >
@@ -242,7 +242,7 @@ export default function TramMap() {
             padding: '10px 12px',
             fontFamily: 'Arial, Helvetica, sans-serif',
             fontSize: 13,
-            background: '#343139',
+            background: PANEL_BG,
             color: '#ffffff',
             borderRadius: 6,
             boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
@@ -279,7 +279,7 @@ export default function TramMap() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
             <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>ETA</span>
-            <span style={{ fontWeight: 500, color: '#96dbeb', fontSize: 12, textAlign: 'right' }}>{popupTram.data.eta}</span>
+            <span style={{ fontWeight: 500, color: ACCENT_BLUE, fontSize: 12, textAlign: 'right' }}>{popupTram.data.eta}</span>
           </div>
           <div style={{ marginTop: 8 }}>
             <span style={{

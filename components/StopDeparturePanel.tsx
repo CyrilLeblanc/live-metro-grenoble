@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Stop } from '../lib/gtfs'
 import { fetchStopTimes } from '../lib/api'
+import { PANEL_BG, PANEL_BORDER, ACCENT_BLUE } from '../lib/config'
 
 interface Props {
   stop: Stop
@@ -99,9 +100,9 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
   return (
     <div
       className="fixed top-0 right-0 h-full w-80 z-[1100] shadow-xl flex flex-col max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:w-full max-sm:h-auto max-sm:max-h-64 max-sm:rounded-t-xl"
-      style={{ background: '#343139', color: '#ffffff', borderLeft: '1px solid #3d3a41' }}
+      style={{ background: PANEL_BG, color: '#ffffff', borderLeft: `1px solid ${PANEL_BORDER}` }}
     >
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #3d3a41' }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
         <div>
           <div className="font-semibold">{stop.stop_name}</div>
           <div className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>{stop.stop_id}</div>
@@ -128,7 +129,7 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
             <button
               onClick={load}
               className="hover:underline"
-              style={{ color: '#96dbeb' }}
+              style={{ color: ACCENT_BLUE }}
             >
               Retry
             </button>
@@ -143,7 +144,7 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
           <div
             key={i}
             className="flex items-center gap-3 px-4 py-3 cursor-pointer"
-            style={{ borderBottom: '1px solid #3d3a41' }}
+            style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}
             onMouseEnter={() => onHover(dep.tripId)}
             onMouseLeave={() => onHover(null)}
             onClick={() => onClick(dep.tripId)}
@@ -159,7 +160,7 @@ export default function StopDeparturePanel({ stop, color, tramRouteIds, routeCol
               <div className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>{formatRelative(dep.time)}</div>
             </div>
             <div className="shrink-0 text-right">
-              <div className="text-sm font-medium" style={{ color: '#96dbeb' }}>{formatHHMM(dep.time)}</div>
+              <div className="text-sm font-medium" style={{ color: ACCENT_BLUE }}>{formatHHMM(dep.time)}</div>
               <div className="text-xs" style={{ color: dep.realtime ? '#4ade80' : 'rgba(255,255,255,0.4)' }}>
                 {dep.realtime ? 'live' : 'scheduled'}
               </div>

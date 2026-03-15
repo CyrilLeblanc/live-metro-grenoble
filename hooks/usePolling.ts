@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { POLLING_INTERVAL_MS, COUNTDOWN_START_S } from '../lib/config'
 import { TramApiItem } from './useAnimatedTrams'
-import { TramMarkerData } from '../components/CanvasTramLayer'
+import { TramMarkerData } from '../lib/geo'
 
 /** Formats an ETA in seconds into a human-readable string. */
 function formatEta(secs: number): string {

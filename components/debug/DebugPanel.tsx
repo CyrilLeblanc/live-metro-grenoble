@@ -6,6 +6,7 @@ import { SpeedGraphRecord } from '../../lib/segmentSpeeds'
 import { buildPathLengths, positionAtProgress } from '../../lib/pathUtils'
 import { MAX_SEGMENT_SPEED_MS } from '../../lib/config'
 import { interpolateSpeed } from '../../lib/speedUtils'
+import { LatLng } from '../../lib/geo'
 
 /** Precompute tSec→meters table by integrating the speed profile. */
 function buildPositionTable(rec: SpeedGraphRecord): Array<{ tSec: number; meters: number }> {
@@ -91,8 +92,6 @@ const W = 500, H = 80
 const PAD = { left: 24, right: 8, top: 8, bottom: 16 }
 const innerW = W - PAD.left - PAD.right
 const innerH = H - PAD.top - PAD.bottom
-
-interface LatLng { lat: number; lng: number }
 
 type Pt = { tSec: number; speedMs: number }
 

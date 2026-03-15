@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import React from 'react'
 import { haversineDistance, makeSegmentKey } from '../lib/geo'
-import { TramApiItem, TramPosition } from './useAnimatedTrams'
+import { TramApiItem, AnimatedPosition } from './useAnimatedTrams'
 import {
   NEARBY_THRESHOLD_M,
   AUTODECONFIRM_THRESHOLD_M,
@@ -38,7 +38,7 @@ export interface NearbyTram {
 
 export function useUserOnTram(
   apiTrams: TramApiItem[],
-  positionsRef: React.RefObject<Map<string, TramPosition>>,
+  positionsRef: React.RefObject<Map<string, AnimatedPosition>>,
 ) {
   const [isTracking, setIsTracking] = useState(false)
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -112,7 +112,7 @@ export function useUserOnTram(
     userLat: number,
     userLng: number,
     trams: TramApiItem[],
-    pRef: React.RefObject<Map<string, TramPosition>>,
+    pRef: React.RefObject<Map<string, AnimatedPosition>>,
   ): NearbyTram[] {
     const results: NearbyTram[] = []
     for (const tram of trams) {

@@ -12,9 +12,7 @@
 import { useEffect, useState } from 'react'
 import { getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
 import { fetchGtfsStatic } from '../lib/api'
-import { makeSegmentKey } from '../lib/geo'
-
-interface LatLng { lat: number; lng: number }
+import { makeSegmentKey, LatLng } from '../lib/geo'
 
 export interface GtfsData {
   lineShapes: Array<{ route: Route; points: ShapePoint[] }>

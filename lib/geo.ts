@@ -1,3 +1,16 @@
+export interface LatLng { lat: number; lng: number }
+
+export interface TramMarkerData {
+  id: string
+  position: [number, number]
+  line: string
+  direction: string
+  nextStop: string
+  eta: string
+  isRealtime: boolean
+  color: string
+}
+
 const RAD = Math.PI / 180
 
 export function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {

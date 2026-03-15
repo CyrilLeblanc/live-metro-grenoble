@@ -1,6 +1,4 @@
-import { haversineDistance } from './geo'
-
-interface LatLng { lat: number; lng: number }
+import { haversineDistance, LatLng } from './geo'
 
 /**
  * Builds a cumulative-distance array for a polyline path.

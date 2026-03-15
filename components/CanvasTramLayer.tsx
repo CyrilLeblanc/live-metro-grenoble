@@ -1,22 +1,12 @@
 'use client'
 import React, { useEffect, useRef } from 'react'
 import { useMap } from 'react-leaflet'
-import type { TramPosition } from '../hooks/useAnimatedTrams'
-
-export interface TramMarkerData {
-  id: string
-  position: [number, number]
-  line: string
-  direction: string
-  nextStop: string
-  eta: string
-  isRealtime: boolean
-  color: string
-}
+import type { AnimatedPosition } from '../hooks/useAnimatedTrams'
+import { TramMarkerData } from '../lib/geo'
 
 interface Props {
   tramMarkers: TramMarkerData[]
-  positionsRef: React.RefObject<Map<string, TramPosition>>
+  positionsRef: React.RefObject<Map<string, AnimatedPosition>>
   highlightedTripId: string | null
   onTramClick: (id: string, x: number, y: number) => void
   onTramHover: (id: string | null) => void

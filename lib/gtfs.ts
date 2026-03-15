@@ -130,7 +130,7 @@ export function getClusterId(stop: Stop): string {
   return stop.parent_station || stop.stop_id
 }
 
-interface LatLng { lat: number; lng: number }
+import { LatLng } from './geo'
 
 let segmentPathsCache: Map<string, LatLng[]> | null = null
 

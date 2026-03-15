@@ -82,3 +82,23 @@ export const MAX_SEGMENT_SPEED_MS = 10
 
 /** Base URL for the Métromobilité real-time and static GTFS APIs. */
 export const UPSTREAM_API_BASE = 'https://data.mobilites-m.fr/api'
+
+// ---------------------------------------------------------------------------
+// Theme colors — shared across UI components
+// ---------------------------------------------------------------------------
+
+/** Dark panel background colour. */
+export const PANEL_BG = '#343139'
+
+/** Panel border colour. */
+export const PANEL_BORDER = '#3d3a41'
+
+/** Accent blue used for interactive elements. */
+export const ACCENT_BLUE = '#96dbeb'
+
+// ---------------------------------------------------------------------------
+// Unit conversions
+// ---------------------------------------------------------------------------
+
+/** Convert metres/second to km/h. */
+export function msToKmh(ms: number): number { return ms * 3.6 }

@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-
-interface LatLng { lat: number; lng: number }
+import { LatLng } from '../lib/geo'
 
 export interface SegmentInfo {
   segmentKey: string

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useDebugContext, SegmentInfo } from '../../contexts/DebugContext'
+import { LatLng } from '../../lib/geo'
 
 /** Squared distance from point (px,py) to segment (ax,ay)-(bx,by) in pixels. */
 function pointToSegmentDistSq(
@@ -19,8 +20,6 @@ function pointToSegmentDistSq(
 }
 
 const HIT_PX = 10
-
-interface LatLng { lat: number; lng: number }
 
 interface Props {
   segmentPaths: Map<string, LatLng[]>

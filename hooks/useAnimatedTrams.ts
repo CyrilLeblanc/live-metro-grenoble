@@ -1,10 +1,8 @@
 import React, { useEffect, useRef } from 'react'
-import { haversineDistance, makeSegmentKey, AveragedGraph } from '../lib/geo'
+import { haversineDistance, makeSegmentKey, AveragedGraph, LatLng } from '../lib/geo'
 import { DECEL_THRESHOLD, MAX_SPEED } from '../lib/config'
 import { interpolateSpeed } from '../lib/speedUtils'
 import { buildPathLengths, findProgressOnPath, positionAtProgress, bearingAtProgress } from '../lib/pathUtils'
-
-interface LatLng { lat: number; lng: number }
 
 export interface TramApiItem {
   id: string
@@ -20,7 +18,7 @@ export interface TramApiItem {
   isRealtime: boolean
 }
 
-export interface TramPosition {
+export interface AnimatedPosition {
   lat: number
   lng: number
   bearing: number
@@ -50,9 +48,9 @@ export function useAnimatedTrams(
   segmentGraphs?: Map<string, AveragedGraph>,
   speedOverrides?: Map<string, number>,
   paused?: boolean,
-): React.RefObject<Map<string, TramPosition>> {
+): React.RefObject<Map<string, AnimatedPosition>> {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
-  const positionsRef = useRef<Map<string, TramPosition>>(new Map())
+  const positionsRef = useRef<Map<string, AnimatedPosition>>(new Map())
   const pathLengthsCacheRef = useRef<Map<string, { lengths: number[]; total: number }>>(new Map())
   const lastApiTimeRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)

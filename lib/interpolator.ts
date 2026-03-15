@@ -13,7 +13,7 @@
  *  5. Fall back to linear interpolation between A and B if no shape is available.
  */
 
-export interface LatLng { lat: number; lng: number }
+import { LatLng } from './geo'
 
 interface ShapePoint { lat: number; lon: number }
 
