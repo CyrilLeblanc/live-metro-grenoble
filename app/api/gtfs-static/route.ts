@@ -13,7 +13,7 @@ let bundleCache: GtfsStaticBundle | null = null
 export async function GET() {
   if (bundleCache) {
     return NextResponse.json(bundleCache, {
-      headers: { 'Cache-Control': 'public, max-age=3600' },
+      headers: { 'Cache-Control': 'public, max-age=2592000' },
     })
   }
 
@@ -65,6 +65,6 @@ export async function GET() {
   }
 
   return NextResponse.json(bundleCache, {
-    headers: { 'Cache-Control': 'public, max-age=3600' },
+    headers: { 'Cache-Control': 'public, max-age=2592000' },
   })
 }
