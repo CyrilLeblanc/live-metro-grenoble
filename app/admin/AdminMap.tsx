@@ -17,6 +17,18 @@ interface OsmWay {
   coords: LatLng[]
 }
 
+interface OsmRelation {
+  id: number
+  name: string // human-readable label for the panel
+  ref: string  // route ref (e.g. "A", "B")
+  wayIds: number[]
+}
+
+interface OverpassData {
+  ways: OsmWay[]
+  relations: OsmRelation[]
+}
+
 interface TripEntry {
   key: string // "routeId|directionId|headsign"
   route_id: string
@@ -143,7 +155,7 @@ function joinWay(assembledPolyline: LatLng[], way: OsmWay): LatLng[] {
 
 // ─── Module-level Overpass cache ──────────────────────────────────────────────
 // Persists across component re-mounts within a browser session.
-let overpassCache: OsmWay[] | null = null
+let overpassCache: OverpassData | null = null
 
 // ─── Colour helpers ────────────────────────────────────────────────────────────
 
@@ -167,7 +179,9 @@ export default function AdminMap() {
 
   // Clusters mode
   const [clusters, setClusters] = useState<Cluster[]>([])
+  const [allStops, setAllStops] = useState<Array<{ stop_id: string; stop_name: string; stop_lat: number; stop_lon: number }>>([])
   const clusterMarkersRef = useRef<Map<string, L.Marker>>(new Map())
+  const stopDotsRef = useRef<L.CircleMarker[]>([])
 
   // Segments mode
   const [segStep, setSegStep] = useState<SegStep>(1)
@@ -175,6 +189,8 @@ export default function AdminMap() {
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [selectedTrip, setSelectedTrip] = useState<TripEntry | null>(null)
   const [osmWays, setOsmWays] = useState<OsmWay[]>([])
+  const [osmRelations, setOsmRelations] = useState<OsmRelation[]>([])
+  const [hoveredRelationId, setHoveredRelationId] = useState<number | null>(null)
   const [selectedWayIds, setSelectedWayIds] = useState<Set<number>>(new Set())
   const [assembledPolyline, setAssembledPolyline] = useState<LatLng[]>([])
   const [tripStops, setTripStops] = useState<Array<{ stop_id: string; stop_name: string; stop_lat: number; stop_lon: number }>>([])
@@ -235,16 +251,22 @@ export default function AdminMap() {
     setStatus('Chargement des clusters…')
     let loaded: Cluster[] | null = null
 
+    // Always fetch GTFS stops for the background dot layer
+    let gtfsStops: typeof allStops = []
     try {
-      const res = await fetch('/api/admin/geodata?file=clusters')
-      if (res.ok) loaded = await res.json()
-    } catch { /* ignore */ }
+      const { routes, stops, stopTimes, trips } = await fetchGtfsStatic()
+      gtfsStops = stops.map((s) => ({ stop_id: s.stop_id, stop_name: s.stop_name, stop_lat: s.stop_lat, stop_lon: s.stop_lon }))
+      setAllStops(gtfsStops)
 
-    if (!loaded || loaded.length === 0) {
-      // Fallback: derive clusters from GTFS
-      setStatus('clusters.json absent — dérivation depuis GTFS…')
+      // Also try to load clusters.json
       try {
-        const { routes, stops, stopTimes, trips } = await fetchGtfsStatic()
+        const res = await fetch('/api/admin/geodata?file=clusters')
+        if (res.ok) loaded = await res.json()
+      } catch { /* ignore */ }
+
+      if (!loaded || loaded.length === 0) {
+        // Fallback: derive clusters from GTFS
+        setStatus('clusters.json absent — dérivation depuis GTFS…')
         const tripRouteMap = new Map<string, string>()
         for (const t of trips) tripRouteMap.set(t.trip_id, t.route_id)
         const colorMap = new Map<string, string>()
@@ -258,7 +280,6 @@ export default function AdminMap() {
           clusterStops.get(cid)!.push(s)
         }
 
-        // Collect stop_ids per cluster that appear in stop_times
         const clusterStopIds = new Map<string, Set<string>>()
         const clusterNames = new Map<string, string>()
         for (const st of stopTimes) {
@@ -284,10 +305,10 @@ export default function AdminMap() {
           })
         }
         loaded = derived
-      } catch (e) {
-        setStatus(`Erreur GTFS: ${e}`)
-        return
       }
+    } catch (e) {
+      setStatus(`Erreur GTFS: ${e}`)
+      return
     }
 
     setClusters(loaded ?? [])
@@ -428,18 +449,59 @@ export default function AdminMap() {
     }
   }, [osmWays, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Update way styles imperatively when selection changes ────────────────────
+  // ── Update way styles imperatively when selection or hover changes ────────────
   useEffect(() => {
     const routeColor = selectedTrip ? hexColor(selectedTrip.route_color) : '#0074d9'
+    const hoveredWayIds = hoveredRelationId
+      ? new Set(osmRelations.find((r) => r.id === hoveredRelationId)?.wayIds ?? [])
+      : null
+
     for (const [wayId, line] of wayLayersRef.current) {
       const isSelected = selectedWayIds.has(wayId)
+      const isHovered = hoveredWayIds?.has(wayId) ?? false
+
       line.setStyle({
-        color: isSelected ? routeColor : '#999',
-        weight: isSelected ? 5 : 3,
-        opacity: 1,
+        color: isSelected ? routeColor : isHovered ? '#fff' : '#999',
+        weight: isSelected ? 5 : isHovered ? 7 : 3,
+        opacity: isHovered ? 1 : 1,
       })
+
+      // Glow via SVG filter on the path element
+      const el = line.getElement() as SVGElement | null
+      if (el) {
+        el.style.filter = isHovered ? 'drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px rgba(255,255,255,0.6))' : ''
+      }
     }
-  }, [selectedWayIds, selectedTrip])
+  }, [selectedWayIds, selectedTrip, hoveredRelationId, osmRelations])
+
+  // ── Stop dots overlay in clusters mode ───────────────────────────────────────
+  useEffect(() => {
+    const L = leafletRef.current
+    const map = mapRef.current
+    if (!L || !map) return
+
+    stopDotsRef.current.forEach((m) => m.remove())
+    stopDotsRef.current = []
+
+    if (mode !== 'clusters' || allStops.length === 0) return
+
+    for (const stop of allStops) {
+      const dot = L.circleMarker([stop.stop_lat, stop.stop_lon], {
+        radius: 4,
+        color: 'rgba(255,255,255,0.4)',
+        fillColor: 'rgba(255,255,255,0.6)',
+        fillOpacity: 1,
+        weight: 1,
+        interactive: false,
+      }).addTo(map)
+      stopDotsRef.current.push(dot)
+    }
+
+    return () => {
+      stopDotsRef.current.forEach((m) => m.remove())
+      stopDotsRef.current = []
+    }
+  }, [allStops, mode])
 
   // ── Rebuild assembled polyline whenever selection changes ────────────────────
   useEffect(() => {
@@ -593,33 +655,73 @@ export default function AdminMap() {
 
   async function loadOsmWays() {
     if (overpassCache) {
-      setOsmWays(overpassCache)
-      setStatus(`${overpassCache.length} voies OSM (cache)`)
+      setOsmWays(overpassCache.ways)
+      setOsmRelations(overpassCache.relations)
+      setStatus(`${overpassCache.ways.length} voies, ${overpassCache.relations.length} relations (cache)`)
       return
     }
 
-    setStatus('Chargement des voies OSM…')
+    setStatus('Chargement des voies et relations OSM…')
     const bounds = GRENOBLE_BOUNDS as [[number, number], [number, number]]
     const bbox = `${bounds[0][0]},${bounds[0][1]},${bounds[1][0]},${bounds[1][1]}`
-    // "out geom" inlines coordinates directly on each way — no need for (._;>;)
-    const q = `[out:json];way[railway=tram](${bbox});out geom;`
+    // Fetch both individual tram ways and tram route relations in one query
+    const q = `[out:json];(way[railway=tram](${bbox});relation[route=tram](${bbox}););out geom;`
 
     try {
       const res = await fetch(`/api/admin/overpass?q=${encodeURIComponent(q)}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
 
-      const ways: OsmWay[] = (data.elements ?? [])
-        .filter((el: { type: string }) => el.type === 'way')
-        .map((el: { id: number; geometry?: Array<{ lat: number; lon: number }> }) => ({
-          id: el.id,
-          coords: (el.geometry ?? []).map((n: { lat: number; lon: number }) => ({ lat: n.lat, lng: n.lon })),
-        }))
-        .filter((w: OsmWay) => w.coords.length > 1)
+      // Build a way map (id → OsmWay) — ways may come directly or via relation members
+      const wayMap = new Map<number, OsmWay>()
 
-      overpassCache = ways
+      type RawEl = {
+        type: string
+        id: number
+        geometry?: Array<{ lat: number; lon: number }>
+        tags?: Record<string, string>
+        members?: Array<{
+          type: string
+          ref: number
+          role: string
+          geometry?: Array<{ lat: number; lon: number }>
+        }>
+      }
+
+      const relations: OsmRelation[] = []
+
+      for (const el of (data.elements ?? []) as RawEl[]) {
+        if (el.type === 'way' && (el.geometry?.length ?? 0) > 1) {
+          wayMap.set(el.id, {
+            id: el.id,
+            coords: el.geometry!.map((n) => ({ lat: n.lat, lng: n.lon })),
+          })
+        } else if (el.type === 'relation') {
+          const wayIds: number[] = []
+          for (const member of el.members ?? []) {
+            if (member.type !== 'way') continue
+            wayIds.push(member.ref)
+            // Capture geometry from relation members not already in direct ways
+            if (!wayMap.has(member.ref) && (member.geometry?.length ?? 0) > 1) {
+              wayMap.set(member.ref, {
+                id: member.ref,
+                coords: member.geometry!.map((n) => ({ lat: n.lat, lng: n.lon })),
+              })
+            }
+          }
+          if (wayIds.length > 0) {
+            const ref = el.tags?.ref ?? ''
+            const name = el.tags?.name ?? el.tags?.['name:fr'] ?? (ref ? `Ligne ${ref}` : `Relation ${el.id}`)
+            relations.push({ id: el.id, name, ref, wayIds })
+          }
+        }
+      }
+
+      const ways = [...wayMap.values()].filter((w) => w.coords.length > 1)
+      overpassCache = { ways, relations }
       setOsmWays(ways)
-      setStatus(`${ways.length} voies OSM chargées`)
+      setOsmRelations(relations)
+      setStatus(`${ways.length} voies, ${relations.length} relations OSM`)
     } catch (e) {
       setStatus(`Erreur Overpass: ${e}`)
     }
@@ -869,8 +971,56 @@ export default function AdminMap() {
                 {' → '}{selectedTrip?.trip_headsign}
               </div>
               <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-                Cliquez les voies OSM dans l&apos;ordre du trajet pour assembler le polyline.
+                Survolez une relation pour la prévisualiser, cliquez pour sélectionner toutes ses voies. Vous pouvez aussi cliquer les voies individuellement.
               </div>
+
+              {/* OSM relations list */}
+              {osmRelations.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    Relations OSM ({osmRelations.length})
+                  </div>
+                  {osmRelations.map((rel) => {
+                    const allSelected = rel.wayIds.every((id) => selectedWayIds.has(id))
+                    const someSelected = !allSelected && rel.wayIds.some((id) => selectedWayIds.has(id))
+                    return (
+                      <div
+                        key={rel.id}
+                        onMouseEnter={() => setHoveredRelationId(rel.id)}
+                        onMouseLeave={() => setHoveredRelationId(null)}
+                        onClick={() => {
+                          setSelectedWayIds((prev) => {
+                            const next = new Set(prev)
+                            if (allSelected) {
+                              rel.wayIds.forEach((id) => next.delete(id))
+                            } else {
+                              rel.wayIds.forEach((id) => next.add(id))
+                            }
+                            return next
+                          })
+                        }}
+                        style={{
+                          padding: '5px 8px',
+                          marginBottom: 3,
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          background: allSelected ? '#1a3a5c' : someSelected ? '#1a2e3a' : '#1e2d50',
+                          borderLeft: `3px solid ${allSelected ? '#4a90d9' : someSelected ? '#4a90d9' : 'transparent'}`,
+                          opacity: hoveredRelationId === rel.id ? 1 : 0.85,
+                        }}
+                      >
+                        <div style={{ fontSize: 12, color: allSelected ? '#7ec8f7' : '#ddd' }}>
+                          {rel.name}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#888' }}>
+                          {rel.wayIds.length} voies · id {rel.id}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               <div style={{ fontSize: 12, color: '#bbb', marginBottom: 6 }}>
                 {selectedWayIds.size} voie(s) sélectionnée(s) — {assembledPolyline.length} points
               </div>
