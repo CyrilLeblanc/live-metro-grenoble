@@ -187,6 +187,7 @@ async function main() {
         shape_id: r.shape_id,
         service_id: r.service_id,
         direction_id: r.direction_id,
+        trip_headsign: r.trip_headsign ?? '',
       }));
     writeJSON('trips.json', trips);
 

@@ -473,11 +473,13 @@ export default function AdminMap() {
     }
   }, [assembledPolyline, selectedTrip, segStep])
 
-  // ── Render trip stops (step 3) ───────────────────────────────────────────────
+  // ── Render trip stops (steps 2 & 3) ─────────────────────────────────────────
+  // Show stops as soon as a trip is selected so the operator sees the line
+  // layout during way assembly and the markers persist when going back from step 3.
   useEffect(() => {
     const L = leafletRef.current
     const map = mapRef.current
-    if (!L || !map || mode !== 'segments' || segStep !== 3) return
+    if (!L || !map || mode !== 'segments' || !selectedTrip) return
 
     stopMarkersRef.current.forEach((m) => m.remove())
     stopMarkersRef.current = []
@@ -499,7 +501,7 @@ export default function AdminMap() {
       stopMarkersRef.current.forEach((m) => m.remove())
       stopMarkersRef.current = []
     }
-  }, [tripStops, selectedTrip, mode, segStep])
+  }, [tripStops, selectedTrip, mode])
 
   // ── Render cut point markers ─────────────────────────────────────────────────
   useEffect(() => {
@@ -872,8 +874,13 @@ export default function AdminMap() {
               <div style={{ fontSize: 12, color: '#bbb', marginBottom: 6 }}>
                 {selectedWayIds.size} voie(s) sélectionnée(s) — {assembledPolyline.length} points
               </div>
+              {cutPoints.length > 0 && (
+                <div style={{ fontSize: 12, color: '#2ecc71', marginBottom: 6 }}>
+                  ✓ {cutPoints.length} point(s) de coupure conservés
+                </div>
+              )}
               <button
-                onClick={() => { setSelectedWayIds(new Set()); setAssembledPolyline([]) }}
+                onClick={() => { setSelectedWayIds(new Set()); setAssembledPolyline([]); setCutPoints([]) }}
                 style={{ background: '#c0392b', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
               >
                 Réinitialiser
@@ -941,7 +948,7 @@ export default function AdminMap() {
               })}
 
               <button
-                onClick={() => setSegStep(2)}
+                onClick={() => { setSegStep(2); setSnappingActive(false) }}
                 style={{ marginTop: 10, background: '#555', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
               >
                 ← Retour étape 2
