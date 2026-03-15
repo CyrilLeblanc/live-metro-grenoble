@@ -200,6 +200,33 @@ function assembleWays(ways: OsmWay[]): LatLng[] {
   return poly
 }
 
+/**
+ * Assembles ways in the order prescribed by an OSM relation.
+ * Only the orientation of each way (forward vs reversed) is determined
+ * automatically, by picking whichever end is closest to the current
+ * polyline tip. This avoids the nearest-neighbour topology issues that
+ * appear when non-relation `railway=tram` ways (sidings, depots…) are
+ * mixed in.
+ */
+function assembleOrderedWays(ways: OsmWay[], orderedIds: number[]): LatLng[] {
+  const wayMap = new Map(ways.map((w) => [w.id, w]))
+  const ordered = orderedIds.map((id) => wayMap.get(id)).filter(Boolean) as OsmWay[]
+  if (ordered.length === 0) return []
+  if (ordered.length === 1) return [...ordered[0].coords]
+
+  let poly: LatLng[] = [...ordered[0].coords]
+  for (let i = 1; i < ordered.length; i++) {
+    const c = ordered[i].coords
+    const polyEnd = poly[poly.length - 1]
+    const action: JoinAction =
+      distLatLng(polyEnd, c[0]) <= distLatLng(polyEnd, c[c.length - 1])
+        ? 'appendFwd'
+        : 'appendRev'
+    poly = applyJoin(poly, c, action)
+  }
+  return poly
+}
+
 // ─── Module-level Overpass cache ──────────────────────────────────────────────
 // Persists across component re-mounts within a browser session.
 let overpassCache: OverpassData | null = null
@@ -551,10 +578,23 @@ export default function AdminMap() {
   }, [allStops, mode])
 
   // ── Rebuild assembled polyline whenever selection changes ────────────────────
+  // If the selected ways exactly match a known OSM relation (same set, any order),
+  // use the relation's member order for assembly — it encodes the correct route
+  // sequence and excludes non-route ways (sidings, depots…) that cause loops.
+  // Otherwise fall back to the nearest-neighbour algorithm.
   useEffect(() => {
     const selectedWays = osmWays.filter((w) => selectedWayIds.has(w.id))
-    setAssembledPolyline(assembleWays(selectedWays))
-  }, [selectedWayIds, osmWays])
+    const matchingRelation = osmRelations.find(
+      (rel) =>
+        rel.wayIds.length === selectedWayIds.size &&
+        rel.wayIds.every((id) => selectedWayIds.has(id))
+    )
+    if (matchingRelation) {
+      setAssembledPolyline(assembleOrderedWays(osmWays, matchingRelation.wayIds))
+    } else {
+      setAssembledPolyline(assembleWays(selectedWays))
+    }
+  }, [selectedWayIds, osmWays, osmRelations])
 
   // ── Render assembled polyline ────────────────────────────────────────────────
   useEffect(() => {
@@ -1031,15 +1071,11 @@ export default function AdminMap() {
                         onMouseEnter={() => setHoveredRelationId(rel.id)}
                         onMouseLeave={() => setHoveredRelationId(null)}
                         onClick={() => {
-                          setSelectedWayIds((prev) => {
-                            const next = new Set(prev)
-                            if (allSelected) {
-                              rel.wayIds.forEach((id) => next.delete(id))
-                            } else {
-                              rel.wayIds.forEach((id) => next.add(id))
-                            }
-                            return next
-                          })
+                          // REPLACE selection with this relation's ways (not union).
+                          // This ensures only OSM-canonised member ways are assembled
+                          // and the ordered assembly path is triggered.
+                          // Clicking an already-active relation clears the selection.
+                          setSelectedWayIds(allSelected ? new Set() : new Set(rel.wayIds))
                         }}
                         style={{
                           padding: '5px 8px',
