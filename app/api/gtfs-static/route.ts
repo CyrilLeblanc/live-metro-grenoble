@@ -12,6 +12,11 @@ async function loadJson<T>(filename: string): Promise<T> {
 let bundleCache: GtfsStaticBundle | null = null
 let bundleEtag: string | null = null
 
+export function invalidateGtfsCache(): void {
+  bundleCache = null
+  bundleEtag = null
+}
+
 export async function GET(request: NextRequest) {
   if (bundleCache && bundleEtag) {
     if (request.headers.get('If-None-Match') === bundleEtag) {

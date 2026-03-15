@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
+import { Cluster, getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
 import { fetchGtfsStatic } from '../lib/api'
 import { makeSegmentKey, LatLng } from '../lib/geo'
 
@@ -103,18 +103,52 @@ export function useGtfsData(): GtfsData {
         clusterStops.get(clusterId)!.push(stop)
       }
 
-      const tramClusters: Array<{ stop: Stop; color: string }> = []
+      // Build per-cluster colour map (used both for GTFS fallback and clusters.json)
+      const clusterColorMap = new Map<string, string>()
       for (const [clusterId, meta] of clusterMeta) {
-        const members = clusterStops.get(clusterId) ?? []
-        const lat = members.reduce((s, m) => s + m.stop_lat, 0) / members.length
-        const lon = members.reduce((s, m) => s + m.stop_lon, 0) / members.length
-        // Use a neutral grey when a cluster is served by multiple lines
-        const color = meta.colors.size === 1 ? [...meta.colors][0] : 'aaaaaa'
-        tramClusters.push({
-          stop: { stop_id: clusterId, stop_name: meta.stop_name, stop_lat: lat, stop_lon: lon, parent_station: '' },
-          color,
-        })
+        clusterColorMap.set(clusterId, meta.colors.size === 1 ? [...meta.colors][0] : 'aaaaaa')
       }
+
+      // Try to load clusters.json; fall back to computed GTFS centroids
+      let savedClusters: Cluster[] | null = null
+      try {
+        const res = await fetch('/gtfs/clusters.json')
+        if (res.ok) savedClusters = await res.json()
+      } catch { /* ignore */ }
+
+      const tramClusters: Array<{ stop: Stop; color: string }> = []
+
+      if (savedClusters && savedClusters.length > 0) {
+        for (const c of savedClusters) {
+          // Derive colour from the first matching stopId, or grey if multi-line
+          const colors = new Set<string>()
+          for (const sid of c.stopIds) {
+            const stop = stopById.get(sid)
+            if (!stop) continue
+            const cid = getClusterId(stop)
+            const col = clusterColorMap.get(cid)
+            if (col && col !== 'aaaaaa') colors.add(col)
+          }
+          const color = colors.size === 1 ? [...colors][0] : 'aaaaaa'
+          tramClusters.push({
+            stop: { stop_id: c.id, stop_name: c.name, stop_lat: c.lat, stop_lon: c.lng, parent_station: '' },
+            color,
+          })
+        }
+      } else {
+        for (const [clusterId, meta] of clusterMeta) {
+          const members = clusterStops.get(clusterId) ?? []
+          const lat = members.reduce((s, m) => s + m.stop_lat, 0) / members.length
+          const lon = members.reduce((s, m) => s + m.stop_lon, 0) / members.length
+          // Use a neutral grey when a cluster is served by multiple lines
+          const color = clusterColorMap.get(clusterId) ?? 'aaaaaa'
+          tramClusters.push({
+            stop: { stop_id: clusterId, stop_name: meta.stop_name, stop_lat: lat, stop_lon: lon, parent_station: '' },
+            color,
+          })
+        }
+      }
+
       setTramStops(tramClusters)
       setSegmentPaths(segPaths)
 

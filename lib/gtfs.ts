@@ -140,6 +140,23 @@ export function stripAgencyPrefix(rawId: string): string {
 
 import { LatLng } from './geo'
 
+export interface Cluster {
+  id: string
+  name: string
+  lat: number
+  lng: number
+  stopIds: string[]
+}
+
+let clustersCache: Cluster[] | null = null
+
+export async function loadClusters(): Promise<Cluster[]> {
+  if (clustersCache) return clustersCache
+  const raw = await loadJson<Cluster[]>('clusters.json')
+  clustersCache = raw
+  return clustersCache
+}
+
 let segmentPathsCache: Map<string, LatLng[]> | null = null
 
 export async function loadSegmentPaths(): Promise<Map<string, LatLng[]>> {
