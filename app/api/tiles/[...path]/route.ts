@@ -11,7 +11,7 @@ function isValidTilePath(z: string, x: string, yWithExt: string): boolean {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path: segments } = await params
@@ -33,14 +33,28 @@ export async function GET(
   try {
     const stat = await fs.stat(cacheFile)
     if (Date.now() - stat.mtimeMs < CACHE_TTL_MS) {
+      const etag = `"${stat.mtimeMs.toString(16)}"`
+      const lastModified = new Date(stat.mtimeMs).toUTCString()
+
+      const ifNoneMatch = request.headers.get('If-None-Match')
+      const ifModifiedSince = request.headers.get('If-Modified-Since')
+      const notModified =
+        ifNoneMatch === etag ||
+        (!ifNoneMatch && !!ifModifiedSince && new Date(ifModifiedSince) >= new Date(stat.mtimeMs))
+
+      const cacheHeaders = {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=2592000, immutable',
+        'ETag': etag,
+        'Last-Modified': lastModified,
+      }
+
+      if (notModified) {
+        return new Response(null, { status: 304, headers: cacheHeaders })
+      }
+
       const data = await fs.readFile(cacheFile)
-      return new Response(data, {
-        status: 200,
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=2592000',
-        },
-      })
+      return new Response(data, { status: 200, headers: cacheHeaders })
     }
   } catch {
     // Cache miss — fall through to upstream fetch
@@ -61,12 +75,14 @@ export async function GET(
       const data = await fs.readFile(cacheFile)
       return new Response(data, {
         status: 200,
-        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=2592000' },
+        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=2592000, immutable', },
       })
     } catch {
       return new Response('Tile unavailable', { status: 502 })
     }
   }
+
+  const now = Date.now()
 
   // Write to cache (fire-and-forget)
   fs.mkdir(path.dirname(cacheFile), { recursive: true })
@@ -77,7 +93,9 @@ export async function GET(
     status: 200,
     headers: {
       'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=2592000',
+      'Cache-Control': 'public, max-age=2592000, immutable',
+      'ETag': `"${now.toString(16)}"`,
+      'Last-Modified': new Date(now).toUTCString(),
     },
   })
 }

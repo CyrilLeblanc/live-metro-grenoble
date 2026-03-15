@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
+import { createHash } from 'crypto'
 import type { GtfsStaticBundle, Route, Stop, ShapePoint } from '../../../lib/gtfs'
 
 async function loadJson<T>(filename: string): Promise<T> {
@@ -9,11 +10,18 @@ async function loadJson<T>(filename: string): Promise<T> {
 }
 
 let bundleCache: GtfsStaticBundle | null = null
+let bundleEtag: string | null = null
 
-export async function GET() {
-  if (bundleCache) {
+export async function GET(request: NextRequest) {
+  if (bundleCache && bundleEtag) {
+    if (request.headers.get('If-None-Match') === bundleEtag) {
+      return new Response(null, {
+        status: 304,
+        headers: { 'Cache-Control': 'public, max-age=2592000, immutable', 'ETag': bundleEtag },
+      })
+    }
     return NextResponse.json(bundleCache, {
-      headers: { 'Cache-Control': 'public, max-age=2592000' },
+      headers: { 'Cache-Control': 'public, max-age=2592000, immutable', 'ETag': bundleEtag },
     })
   }
 
@@ -64,7 +72,9 @@ export async function GET() {
     segmentPaths: rawSegmentPaths,
   }
 
+  bundleEtag = `"${createHash('sha1').update(JSON.stringify(bundleCache)).digest('hex').slice(0, 16)}"`
+
   return NextResponse.json(bundleCache, {
-    headers: { 'Cache-Control': 'public, max-age=2592000' },
+    headers: { 'Cache-Control': 'public, max-age=2592000, immutable', 'ETag': bundleEtag },
   })
 }

@@ -1,18 +1,42 @@
 import type { GtfsStaticBundle } from './gtfs'
 
+const GTFS_CACHE = 'gtfs-static-v1'
+
 let gtfsStaticPromise: Promise<GtfsStaticBundle> | null = null
 
 export function fetchGtfsStatic(): Promise<GtfsStaticBundle> {
   if (!gtfsStaticPromise) {
-    gtfsStaticPromise = fetch('/api/gtfs-static')
-      .then((res) => {
-        if (!res.ok) throw new Error(`gtfs-static fetch failed: ${res.status}`)
-        return res.json() as Promise<GtfsStaticBundle>
+    gtfsStaticPromise = (async () => {
+      // Check Cache API for a previously stored response + ETag
+      let etag: string | null = null
+      let cachedData: GtfsStaticBundle | null = null
+      if (typeof caches !== 'undefined') {
+        const cache = await caches.open(GTFS_CACHE)
+        const cached = await cache.match('/api/gtfs-static')
+        if (cached) {
+          etag = cached.headers.get('ETag')
+          cachedData = await cached.json()
+        }
+      }
+
+      const res = await fetch('/api/gtfs-static', {
+        headers: etag ? { 'If-None-Match': etag } : {},
+        cache: 'no-store',
       })
-      .catch((err) => {
-        gtfsStaticPromise = null
-        throw err
-      })
+
+      if (res.status === 304 && cachedData) return cachedData
+      if (!res.ok) throw new Error(`gtfs-static fetch failed: ${res.status}`)
+
+      if (typeof caches !== 'undefined') {
+        const cache = await caches.open(GTFS_CACHE)
+        await cache.put('/api/gtfs-static', res.clone())
+      }
+
+      return res.json() as Promise<GtfsStaticBundle>
+    })().catch((err) => {
+      gtfsStaticPromise = null
+      throw err
+    })
   }
   return gtfsStaticPromise
 }
