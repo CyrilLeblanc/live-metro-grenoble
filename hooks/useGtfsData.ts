@@ -12,9 +12,7 @@
 import { useEffect, useState } from 'react'
 import { getClusterId, Route, ShapePoint, Stop } from '../lib/gtfs'
 import { fetchGtfsStatic } from '../lib/api'
-import { makeSegmentKey } from '../lib/geo'
-
-interface LatLng { lat: number; lng: number }
+import { makeSegmentKey, LatLng } from '../lib/geo'
 
 export interface GtfsData {
   lineShapes: Array<{ route: Route; points: ShapePoint[] }>
@@ -36,7 +34,7 @@ export function useGtfsData(): GtfsData {
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
-    async function load() {
+    async function fetchAndTransformGtfs() {
       const { routes, trips, shapes, stops, stopTimes, segmentPaths: segPathsRaw } = await fetchGtfsStatic()
       const segPaths = new Map(Object.entries(segPathsRaw))
 
@@ -140,7 +138,7 @@ export function useGtfsData(): GtfsData {
 
       setDataLoaded(true)
     }
-    load()
+    fetchAndTransformGtfs()
   }, [])
 
   return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded }

@@ -82,3 +82,49 @@ export const MAX_SEGMENT_SPEED_MS = 10
 
 /** Base URL for the Métromobilité real-time and static GTFS APIs. */
 export const UPSTREAM_API_BASE = 'https://data.mobilites-m.fr/api'
+
+// ---------------------------------------------------------------------------
+// Canvas rendering — CanvasTramLayer sprite dimensions
+// ---------------------------------------------------------------------------
+
+/** Base sprite size in px for tram icons on the map. */
+export const TRAM_SPRITE_SIZE = 24
+
+/** Sprite size in px when the tram is highlighted/hovered. */
+export const TRAM_SPRITE_SIZE_HIGHLIGHTED = 32
+
+/** Squared pixel radius for tram click/hover hit-testing on the canvas. */
+export const TRAM_HIT_TEST_RADIUS_SQ = 16 * 16
+
+// ---------------------------------------------------------------------------
+// Upstream API timeouts and caching
+// ---------------------------------------------------------------------------
+
+/** Per-cluster fetch timeout when querying the upstream Métromobilité API (ms). */
+export const CLUSTER_TIMEOUT_MS = 3000
+
+/** Time-to-live for the shared tram position response cache (ms). */
+export const RESPONSE_CACHE_TTL_MS = 10_000
+
+/** Minimum elapsed time between API ticks to derive speed from displacement (seconds). */
+export const MIN_ELAPSED_FOR_SPEED = 0.1
+
+// ---------------------------------------------------------------------------
+// Theme colors — shared across UI components
+// ---------------------------------------------------------------------------
+
+/** Dark panel background colour. */
+export const PANEL_BG = '#343139'
+
+/** Panel border colour. */
+export const PANEL_BORDER = '#3d3a41'
+
+/** Accent blue used for interactive elements. */
+export const ACCENT_BLUE = '#96dbeb'
+
+// ---------------------------------------------------------------------------
+// Unit conversions
+// ---------------------------------------------------------------------------
+
+/** Convert metres/second to km/h. */
+export function msToKmh(ms: number): number { return ms * 3.6 }

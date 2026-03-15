@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import React from 'react'
 import { haversineDistance, makeSegmentKey } from '../lib/geo'
-import { TramApiItem, TramPosition } from './useAnimatedTrams'
+import { TramApiItem, AnimatedPosition } from './useAnimatedTrams'
 import {
   NEARBY_THRESHOLD_M,
   AUTODECONFIRM_THRESHOLD_M,
@@ -38,7 +38,7 @@ export interface NearbyTram {
 
 export function useUserOnTram(
   apiTrams: TramApiItem[],
-  positionsRef: React.RefObject<Map<string, TramPosition>>,
+  positionsRef: React.RefObject<Map<string, AnimatedPosition>>,
 ) {
   const [isTracking, setIsTracking] = useState(false)
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -112,7 +112,7 @@ export function useUserOnTram(
     userLat: number,
     userLng: number,
     trams: TramApiItem[],
-    pRef: React.RefObject<Map<string, TramPosition>>,
+    pRef: React.RefObject<Map<string, AnimatedPosition>>,
   ): NearbyTram[] {
     const results: NearbyTram[] = []
     for (const tram of trams) {
@@ -148,47 +148,63 @@ export function useUserOnTram(
     }).catch(() => { /* fire-and-forget */ })
   }
 
+  /**
+   * Computes the user's speed from GPS history using a sliding time window.
+   * Sums Haversine distances between consecutive fixes within the window
+   * and divides by elapsed time. Returns null if insufficient data.
+   */
+  function computeGpsSpeed(history: GpsPoint[], now: number): number | null {
+    const windowStart = now - SPEED_WINDOW_SEC * 1000
+    const windowPts = history.filter(p => p.timestamp >= windowStart)
+    if (windowPts.length < 2) return null
+    let totalDist = 0
+    for (let i = 1; i < windowPts.length; i++) {
+      totalDist += haversineDistance(windowPts[i - 1].lat, windowPts[i - 1].lng, windowPts[i].lat, windowPts[i].lng)
+    }
+    const elapsed = (windowPts[windowPts.length - 1].timestamp - windowPts[0].timestamp) / 1000
+    return elapsed > 0 ? totalDist / elapsed : null
+  }
+
+  /**
+   * Applies exponentially-weighted moving average (EWMA) smoothing to a speed reading.
+   * Weights: 40% new value, 60% previous. This ratio balances responsiveness to real
+   * speed changes against filtering out GPS jitter (typical ±2–5 m/s noise).
+   */
+  function applyEwmaSmoothing(rawSpeed: number, prevSpeed: number | null): number {
+    const prev = prevSpeed ?? rawSpeed
+    return 0.4 * rawSpeed + 0.6 * prev
+  }
+
   function onGpsPosition(pos: GeolocationPosition) {
     const { latitude, longitude, accuracy } = pos.coords
     setGpsAccuracy(accuracy)
 
+    // --- Accuracy gate: ignore inaccurate fixes ---
     if (accuracy > MAX_ACCURACY_M) return
 
+    // --- GPS history buffer management ---
     const now = pos.timestamp
     const history = gpsHistoryRef.current
     history.push({ lat: latitude, lng: longitude, timestamp: now })
     if (history.length > GPS_HISTORY) history.splice(0, history.length - GPS_HISTORY)
 
-    // Compute speed over 10s window
-    const windowStart = now - SPEED_WINDOW_SEC * 1000
-    const windowPts = history.filter(p => p.timestamp >= windowStart)
-    let rawSpeed: number | null = null
-    if (windowPts.length >= 2) {
-      let totalDist = 0
-      for (let i = 1; i < windowPts.length; i++) {
-        totalDist += haversineDistance(windowPts[i - 1].lat, windowPts[i - 1].lng, windowPts[i].lat, windowPts[i].lng)
-      }
-      const elapsed = (windowPts[windowPts.length - 1].timestamp - windowPts[0].timestamp) / 1000
-      if (elapsed > 0) rawSpeed = totalDist / elapsed
-    }
-
+    // --- Speed computation ---
+    const rawSpeed = computeGpsSpeed(history, now)
     if (rawSpeed !== null && rawSpeed <= MAX_SPEED_MS) {
-      // Exponentially-weighted moving average: 40% new reading, 60% history.
-      // Smooths out GPS jitter while still responding to genuine speed changes.
-      const prev = ewmaSpeedRef.current ?? rawSpeed
-      const smoothed = 0.4 * rawSpeed + 0.6 * prev
+      const smoothed = applyEwmaSmoothing(rawSpeed, ewmaSpeedRef.current)
       ewmaSpeedRef.current = smoothed
       setCurrentSpeedMs(smoothed)
     }
 
-    // Update nearby trams for searching state
+    // --- Nearby tram detection (while searching, before confirmation) ---
     if (!isConfirmedRef.current) {
       const nearby = findNearbyTrams(latitude, longitude, apiTramsRef.current, positionsRef)
       setNearbyTrams(nearby)
     }
 
-    // Auto-deconfirm: if the user is consistently far from their tram for
-    // AUTODECONFIRM_FIXES consecutive fixes, they've likely left the tram.
+    // --- Auto-deconfirm: detect when user has left the tram ---
+    // If the user is consistently far from their confirmed tram for
+    // AUTODECONFIRM_FIXES consecutive fixes, they've likely disembarked.
     if (isConfirmedRef.current && userTramIdRef.current) {
       const tram = apiTramsRef.current.find(t => t.id === userTramIdRef.current)
       if (tram) {
@@ -212,7 +228,7 @@ export function useUserOnTram(
       }
     }
 
-    // Append to segment buffer
+    // --- Segment buffer: record speed data for community speed graphs ---
     if (isConfirmedRef.current && segmentBufferRef.current && ewmaSpeedRef.current !== null) {
       const elapsed = (Date.now() - segmentBufferRef.current.startTime) / 1000
       const tSec = Math.max(0, segmentBufferRef.current.etaAtConfirmation - elapsed)

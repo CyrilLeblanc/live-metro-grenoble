@@ -1,6 +1,7 @@
 'use client'
 
 import { NearbyTram } from '../hooks/useUserOnTram'
+import { PANEL_BG, msToKmh } from '../lib/config'
 
 interface OnTramOverlayProps {
   isTracking: boolean
@@ -19,7 +20,7 @@ const OVERLAY_STYLE: React.CSSProperties = {
   bottom: 24,
   left: 16,
   zIndex: 1000,
-  background: '#343139',
+  background: PANEL_BG,
   color: '#ffffff',
   borderRadius: 8,
   boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
@@ -171,7 +172,7 @@ export default function OnTramOverlay({
   }
 
   // State 4: Active — confirmed on a tram
-  const speedKmh = currentSpeedMs !== null ? (currentSpeedMs * 3.6).toFixed(1) : null
+  const speedKmh = currentSpeedMs !== null ? msToKmh(currentSpeedMs).toFixed(1) : null
 
   return (
     <div style={OVERLAY_STYLE}>

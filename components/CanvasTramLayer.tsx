@@ -1,22 +1,14 @@
 'use client'
 import React, { useEffect, useRef } from 'react'
 import { useMap } from 'react-leaflet'
-import type { TramPosition } from '../hooks/useAnimatedTrams'
-
-export interface TramMarkerData {
-  id: string
-  position: [number, number]
-  line: string
-  direction: string
-  nextStop: string
-  eta: string
-  isRealtime: boolean
-  color: string
-}
+import type { AnimatedPosition } from '../hooks/useAnimatedTrams'
+import { TramMarkerData } from '../lib/geo'
+import { createMapCanvas } from '../lib/canvasLayer'
+import { TRAM_SPRITE_SIZE, TRAM_SPRITE_SIZE_HIGHLIGHTED, TRAM_HIT_TEST_RADIUS_SQ } from '../lib/config'
 
 interface Props {
   tramMarkers: TramMarkerData[]
-  positionsRef: React.RefObject<Map<string, TramPosition>>
+  positionsRef: React.RefObject<Map<string, AnimatedPosition>>
   highlightedTripId: string | null
   onTramClick: (id: string, x: number, y: number) => void
   onTramHover: (id: string | null) => void
@@ -24,12 +16,12 @@ interface Props {
 }
 
 function buildSprite(color: string, highlighted: boolean): OffscreenCanvas {
-  const size = highlighted ? 32 : 24
+  const size = highlighted ? TRAM_SPRITE_SIZE_HIGHLIGHTED : TRAM_SPRITE_SIZE
   const oc = new OffscreenCanvas(size, size)
   const ctx = oc.getContext('2d')!
   const cx = size / 2
   const cy = size / 2
-  const scale = size / 24
+  const scale = size / TRAM_SPRITE_SIZE
 
   ctx.save()
   ctx.translate(cx, cy)
@@ -68,14 +60,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
   useEffect(() => { opacityRef.current = opacity }, [opacity])
 
   useEffect(() => {
-    const container = map.getContainer()
-    const canvas = document.createElement('canvas')
-    canvas.style.position = 'absolute'
-    canvas.style.top = '0'
-    canvas.style.left = '0'
-    canvas.style.pointerEvents = 'auto'
-    canvas.style.zIndex = '650'
-    container.appendChild(canvas)
+    const { canvas, cleanup: cleanupCanvas } = createMapCanvas(map, { zIndex: '650', pointerEvents: true })
 
     const spriteCache = new Map<string, OffscreenCanvas>()
 
@@ -84,16 +69,6 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       if (!spriteCache.has(key)) spriteCache.set(key, buildSprite(color, highlighted))
       return spriteCache.get(key)!
     }
-
-    function resize() {
-      const size = map.getSize()
-      canvas.width = size.x
-      canvas.height = size.y
-    }
-    resize()
-    map.on('resize', resize)
-    map.on('zoomend', resize)
-    map.on('moveend', resize)
 
     let rafId: number
 
@@ -133,7 +108,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       const positions = positionsRef.current
       if (!positions) return null
       let bestId: string | null = null
-      let bestDist = 16 * 16
+      let bestDist = TRAM_HIT_TEST_RADIUS_SQ
       for (const [id, pos] of positions) {
         const pt = map.latLngToContainerPoint([pos.lat, pos.lng])
         const dx = pt.x - x
@@ -186,10 +161,7 @@ export default function CanvasTramLayer({ tramMarkers, positionsRef, highlighted
       cancelAnimationFrame(rafId)
       canvas.removeEventListener('click', onClick)
       canvas.removeEventListener('mousemove', onMouseMove)
-      map.off('resize', resize)
-      map.off('zoomend', resize)
-      map.off('moveend', resize)
-      container.removeChild(canvas)
+      cleanupCanvas()
     }
   }, [map]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -12,14 +12,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { POLLING_INTERVAL_MS, COUNTDOWN_START_S } from '../lib/config'
 import { TramApiItem } from './useAnimatedTrams'
-import { TramMarkerData } from '../components/CanvasTramLayer'
-
-/** Formats an ETA in seconds into a human-readable string. */
-function formatEta(secs: number): string {
-  if (secs <= 0) return 'arriving'
-  const mins = Math.round(secs / 60)
-  return mins < 1 ? '< 1 min' : `in ${mins} min`
-}
+import { TramMarkerData } from '../lib/geo'
+import { formatEta } from '../lib/format'
 
 export interface PollingData {
   apiTrams: TramApiItem[]
@@ -63,7 +57,7 @@ export function usePolling(dataLoaded: boolean, paused = false): PollingData {
   useEffect(() => {
     if (!dataLoaded) return
 
-    async function tick() {
+    async function fetchTramPositions() {
       if (pausedRef.current) return
       // Guard against overlapping in-flight requests
       if (pollingInFlightRef.current) return
@@ -89,8 +83,8 @@ export function usePolling(dataLoaded: boolean, paused = false): PollingData {
       resetTimers()
     }
 
-    tickRef.current = tick
-    tick()
+    tickRef.current = fetchTramPositions
+    fetchTramPositions()
 
     return () => {
       clearTimers()

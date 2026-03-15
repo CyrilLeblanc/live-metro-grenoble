@@ -6,8 +6,17 @@ import { SpeedGraphRecord } from '../../lib/segmentSpeeds'
 import { buildPathLengths, positionAtProgress } from '../../lib/pathUtils'
 import { MAX_SEGMENT_SPEED_MS } from '../../lib/config'
 import { interpolateSpeed } from '../../lib/speedUtils'
+import ManualGraphEditor, { Pt } from './ManualGraphEditor'
+import SpeedGraph from './SpeedGraph'
+import EditableSpeed from './EditableSpeed'
 
-/** Precompute tSec→meters table by integrating the speed profile. */
+/**
+ * Precomputes a tSec→metres lookup table by numerically integrating the speed profile.
+ * Uses the trapezoidal rule with 0.25 s steps. The resulting table maps each countdown
+ * value (tSec counts down from duration to 0) to the cumulative distance travelled.
+ * This allows the playback dot to move at the speed shown in the graph rather than
+ * at a uniform rate.
+ */
 function buildPositionTable(rec: SpeedGraphRecord): Array<{ tSec: number; meters: number }> {
   const STEP = 0.25
   const dur = rec.totalDurationSec
@@ -69,7 +78,12 @@ function formatDate(ts: number): string {
   return `${dd}/${mm} ${hh}:${min}`
 }
 
-// Bell curve to pre-populate the manual editor
+/**
+ * Generates a Gaussian (bell curve) speed profile for initializing the manual editor.
+ * Models realistic tram behaviour: accelerate from stop, cruise at peak speed, decelerate
+ * to next stop. The curve is sampled at N evenly-spaced points with σ=0.2 centred at 50%.
+ * First and last points are forced to zero speed (stopped at stations).
+ */
 function bellCurve(durationSec: number, peakSpeedMs: number): Array<{ tSec: number; speedMs: number }> {
   const N = 13
   const pts = []
@@ -86,323 +100,8 @@ function bellCurve(durationSec: number, peakSpeedMs: number): Array<{ tSec: numb
   return pts
 }
 
-// SVG editor constants
-const W = 500, H = 80
-const PAD = { left: 24, right: 8, top: 8, bottom: 16 }
-const innerW = W - PAD.left - PAD.right
-const innerH = H - PAD.top - PAD.bottom
-
-interface LatLng { lat: number; lng: number }
-
-type Pt = { tSec: number; speedMs: number }
-
-interface ManualGraphEditorProps {
-  points: Pt[]
-  setPoints: React.Dispatch<React.SetStateAction<Pt[]>>
-  durationSec: number
-  playbackPositionRef: React.RefObject<{ lat: number; lng: number } | null>
-  shapePath: LatLng[]
-  pathLengthsRef: React.RefObject<{ lengths: number[]; total: number } | null>
-}
-
-function ManualGraphEditor({ points, setPoints, durationSec, playbackPositionRef, shapePath, pathLengthsRef }: ManualGraphEditorProps) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  // Live points during drag — index-stable (never re-sort mid-drag)
-  const liveRef = useRef<Pt[]>(points)
-  // Track dragging by index in liveRef (stable since we don't sort mid-drag)
-  const dragRef = useRef<{ idx: number; lockTSec: number | null } | null>(null)
-  // Hover state for visual feedback
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
-  // Trigger re-render during drag without touching parent state
-  const [renderTick, setRenderTick] = useState(0)
-  // Undo history
-  const historyRef = useRef<Pt[][]>([])
-
-  // Sync when points reset externally (segment change)
-  useEffect(() => { liveRef.current = points }, [points])
-
-  // Ctrl+Z undo
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault()
-        const prev = historyRef.current.pop()
-        if (prev) { liveRef.current = prev; setPoints(prev) }
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [setPoints])
-
-  function pushHistory() {
-    historyRef.current.push([...liveRef.current])
-    if (historyRef.current.length > 50) historyRef.current.shift()
-  }
-
-  // Coordinate mapping — uniform scale (no preserveAspectRatio="none")
-  const toX = (tSec: number) => PAD.left + ((durationSec - tSec) / durationSec) * innerW
-  const toY = (speedMs: number) => PAD.top + (1 - speedMs / MAX_SEGMENT_SPEED_MS) * innerH
-  const fromX = (px: number) => durationSec - ((px - PAD.left) / innerW) * durationSec
-  const fromY = (py: number) => Math.max(0, Math.min(MAX_SEGMENT_SPEED_MS, MAX_SEGMENT_SPEED_MS * (1 - (py - PAD.top) / innerH)))
-
-  function toSvgCoords(e: React.MouseEvent<SVGSVGElement>): { px: number; py: number } {
-    const rect = svgRef.current!.getBoundingClientRect()
-    // Uniform scale: W/rect.width == H/rect.height (no preserveAspectRatio="none")
-    const scale = W / rect.width
-    return { px: (e.clientX - rect.left) * scale, py: (e.clientY - rect.top) * scale }
-  }
-
-  // Returns index of point within 8px, or -1
-  function hitTestIdx(px: number, py: number): number {
-    const pts = liveRef.current
-    for (let i = 0; i < pts.length; i++) {
-      const dx = toX(pts[i].tSec) - px
-      const dy = toY(pts[i].speedMs) - py
-      if (dx * dx + dy * dy <= 64) return i
-    }
-    return -1
-  }
-
-  function updateMapPosition(tSec: number) {
-    if (pathLengthsRef.current && shapePath.length > 0) {
-      const meters = (1 - tSec / durationSec) * pathLengthsRef.current.total
-      playbackPositionRef.current = positionAtProgress(shapePath, pathLengthsRef.current.lengths, meters)
-    }
-  }
-
-  function commit(pts: Pt[]) {
-    const sorted = [...pts].sort((a, b) => b.tSec - a.tSec)
-    liveRef.current = sorted
-    setPoints(sorted)
-  }
-
-  function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
-    const { px, py } = toSvgCoords(e)
-    const idx = hitTestIdx(px, py)
-    if (idx === -1) return
-    pushHistory()
-    const n = liveRef.current.length
-    // Determine tSec lock for first/last points (they're sorted desc, so idx 0 = highest tSec)
-    const lockTSec = idx === 0 ? durationSec : idx === n - 1 ? 0 : null
-    dragRef.current = { idx, lockTSec }
-  }
-
-  function onMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-    const { px, py } = toSvgCoords(e)
-
-    if (dragRef.current !== null) {
-      const { idx, lockTSec } = dragRef.current
-      const pts = [...liveRef.current]
-      const newTSec = lockTSec !== null ? lockTSec : Math.max(0, Math.min(durationSec, fromX(px)))
-      pts[idx] = { tSec: newTSec, speedMs: fromY(py) }
-      liveRef.current = pts
-      setRenderTick(n => n + 1)
-      updateMapPosition(newTSec)
-      return
-    }
-
-    // Hover detection
-    const idx = hitTestIdx(px, py)
-    setHoveredIdx(idx === -1 ? null : idx)
-
-    const tSec = Math.max(0, Math.min(durationSec, fromX(px)))
-    updateMapPosition(tSec)
-  }
-
-  function onMouseUp(e: React.MouseEvent<SVGSVGElement>) {
-    const { px, py } = toSvgCoords(e)
-    if (dragRef.current !== null) {
-      commit(liveRef.current)
-      dragRef.current = null
-      return
-    }
-    // Click on empty area → insert point
-    if (hitTestIdx(px, py) === -1) {
-      pushHistory()
-      const newPt: Pt = {
-        tSec: Math.max(0, Math.min(durationSec, fromX(px))),
-        speedMs: Math.max(0, Math.min(MAX_SEGMENT_SPEED_MS, fromY(py))),
-      }
-      commit([...liveRef.current, newPt])
-    }
-  }
-
-  function onContextMenu(e: React.MouseEvent<SVGSVGElement>) {
-    e.preventDefault()
-    const { px, py } = toSvgCoords(e)
-    const idx = hitTestIdx(px, py)
-    if (idx !== -1 && liveRef.current.length > 2) {
-      pushHistory()
-      commit(liveRef.current.filter((_, i) => i !== idx))
-    }
-  }
-
-  function onMouseLeave() {
-    if (dragRef.current !== null) {
-      commit(liveRef.current)
-      dragRef.current = null
-    }
-    setHoveredIdx(null)
-    playbackPositionRef.current = null
-  }
-
-  void renderTick
-  const displayPoints = liveRef.current
-
-  const pathD = displayPoints.map((p, i) =>
-    `${i === 0 ? 'M' : 'L'} ${toX(p.tSec).toFixed(1)} ${toY(p.speedMs).toFixed(1)}`
-  ).join(' ')
-
-  const ticks: number[] = []
-  for (let t = 10; t < durationSec; t += 10) ticks.push(t)
-
-  const isDragging = dragRef.current !== null
-
-  return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: '100%', display: 'block', cursor: isDragging ? 'grabbing' : 'crosshair', userSelect: 'none' }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onContextMenu={onContextMenu}
-      onMouseLeave={onMouseLeave}
-    >
-      <rect x={0} y={0} width={W} height={H} fill="rgba(255,255,255,0.03)" />
-      {ticks.map(t => {
-        const x = toX(t)
-        return (
-          <g key={t}>
-            <line x1={x} y1={H - PAD.bottom} x2={x} y2={H - PAD.bottom + 3} stroke="rgba(255,255,255,0.2)" strokeWidth={1} />
-            <text x={x} y={H - 1} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize={7} fontFamily="monospace">{t}s</text>
-          </g>
-        )
-      })}
-      <text x={PAD.left - 2} y={PAD.top + 6} textAnchor="end" fill="rgba(255,255,255,0.3)" fontSize={7} fontFamily="monospace">m/s</text>
-      {displayPoints.length > 1 && (
-        <path d={pathD} fill="none" stroke="#fbbf24" strokeWidth={1.5} />
-      )}
-      {displayPoints.map((p, i) => {
-        const isActive = i === hoveredIdx || (isDragging && i === dragRef.current?.idx)
-        return (
-          <circle
-            key={i}
-            cx={toX(p.tSec)}
-            cy={toY(p.speedMs)}
-            r={isActive ? 7 : 4}
-            fill={isActive ? '#fff' : '#fbbf24'}
-            stroke={isActive ? '#fbbf24' : 'none'}
-            strokeWidth={2}
-            style={{ transition: 'r 0.05s, fill 0.05s' }}
-          />
-        )
-      })}
-    </svg>
-  )
-}
-
-interface SpeedGraphProps {
-  record: SpeedGraphRecord
-  tSec: number
-  onHoverTSec?: (tSec: number | null) => void
-}
-
-function SpeedGraph({ record, tSec, onHoverTSec }: SpeedGraphProps) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  const W = 500, H = 80
-  const PAD = { left: 8, right: 8, top: 8, bottom: 8 }
-
-  if (record.points.length === 0) return <div style={{ color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontSize: 12 }}>no data</div>
-
-  const maxSpeed = Math.max(...record.points.map(p => p.speedMs), 0.1)
-  const dur = record.totalDurationSec
-
-  const toX = (t: number) => PAD.left + (t / dur) * (W - PAD.left - PAD.right)
-  const toY = (s: number) => PAD.top + (1 - s / maxSpeed) * (H - PAD.top - PAD.bottom)
-
-  const pathD = record.points.map((p, i) =>
-    `${i === 0 ? 'M' : 'L'} ${toX(p.tSec).toFixed(1)} ${toY(p.speedMs).toFixed(1)}`
-  ).join(' ')
-
-  // Elapsed = totalDurationSec - tSec (tSec counts down)
-  const elapsed = dur - tSec
-  const cursorX = toX(elapsed)
-
-  function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-    if (!onHoverTSec || !svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    const scale = W / rect.width  // uniform: no preserveAspectRatio="none"
-    const px = (e.clientX - rect.left) * scale
-    const graphW = W - PAD.left - PAD.right
-    const t = Math.max(0, Math.min(dur, (px - PAD.left) / graphW * dur))
-    onHoverTSec(t)
-  }
-
-  function handleMouseLeave() {
-    onHoverTSec?.(null)
-  }
-
-  return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: '100%', display: 'block' }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
-      <path d={pathD} fill="none" stroke="#fbbf24" strokeWidth={1.5} />
-      <line x1={cursorX} y1={PAD.top} x2={cursorX} y2={H - PAD.bottom} stroke="#fbbf24" strokeWidth={1} strokeDasharray="3 2" opacity={0.8} />
-    </svg>
-  )
-}
-
-interface EditableSpeedProps {
-  value: number
-  onSave: (v: number) => void
-}
-
-function EditableSpeed({ value, onSave }: EditableSpeedProps) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(String(value.toFixed(2)))
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (editing) inputRef.current?.select()
-  }, [editing])
-
-  function commit() {
-    const v = parseFloat(draft)
-    if (!isNaN(v) && v >= 0 && v <= 10) onSave(v)
-    setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-        style={{
-          width: 64, background: '#1a1a1a', border: '1px solid #fbbf24',
-          color: '#fbbf24', fontFamily: 'monospace', fontSize: 12, padding: '1px 4px',
-          borderRadius: 3, outline: 'none',
-        }}
-      />
-    )
-  }
-  return (
-    <span
-      onClick={() => { setEditing(true); setDraft(String(value.toFixed(2))) }}
-      title="Click to edit"
-      style={{ cursor: 'text', color: '#fbbf24', fontFamily: 'monospace', fontSize: 12, borderBottom: '1px dashed rgba(251,191,36,0.4)' }}
-    >
-      {value.toFixed(2)}
-    </span>
-  )
-}
+// Height constant used in loading placeholder
+const H = 80
 
 export default function DebugPanel() {
   const { isPanelOpen, selectedSegmentKey, selectedSegment, closePanel, playbackPositionRef } = useDebugContext()

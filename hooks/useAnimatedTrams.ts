@@ -1,10 +1,8 @@
 import React, { useEffect, useRef } from 'react'
-import { haversineDistance, makeSegmentKey, AveragedGraph } from '../lib/geo'
-import { DECEL_THRESHOLD, MAX_SPEED } from '../lib/config'
+import { haversineDistance, makeSegmentKey, AveragedGraph, LatLng } from '../lib/geo'
+import { DECEL_THRESHOLD, MAX_SPEED, MIN_ELAPSED_FOR_SPEED } from '../lib/config'
 import { interpolateSpeed } from '../lib/speedUtils'
 import { buildPathLengths, findProgressOnPath, positionAtProgress, bearingAtProgress } from '../lib/pathUtils'
-
-interface LatLng { lat: number; lng: number }
 
 export interface TramApiItem {
   id: string
@@ -20,7 +18,7 @@ export interface TramApiItem {
   isRealtime: boolean
 }
 
-export interface TramPosition {
+export interface AnimatedPosition {
   lat: number
   lng: number
   bearing: number
@@ -50,9 +48,9 @@ export function useAnimatedTrams(
   segmentGraphs?: Map<string, AveragedGraph>,
   speedOverrides?: Map<string, number>,
   paused?: boolean,
-): React.RefObject<Map<string, TramPosition>> {
+): React.RefObject<Map<string, AnimatedPosition>> {
   const animStateRef = useRef<Map<string, TramAnimState>>(new Map())
-  const positionsRef = useRef<Map<string, TramPosition>>(new Map())
+  const positionsRef = useRef<Map<string, AnimatedPosition>>(new Map())
   const pathLengthsCacheRef = useRef<Map<string, { lengths: number[]; total: number }>>(new Map())
   const lastApiTimeRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
@@ -106,7 +104,7 @@ export function useAnimatedTrams(
       const progress = findProgressOnPath(shapePath, lengths, { lat: item.lat, lng: item.lng })
 
       let speedMs: number
-      if (prev && elapsedSec > 0.1) {
+      if (prev && elapsedSec > MIN_ELAPSED_FOR_SPEED) {
         // Derive speed from displacement between consecutive API positions
         const dist = haversineDistance(prev.apiLat, prev.apiLng, item.lat, item.lng)
         speedMs = Math.min(dist / elapsedSec, MAX_SPEED)
@@ -114,13 +112,16 @@ export function useAnimatedTrams(
         speedMs = prev?.speedMs ?? MAX_SPEED / 2
       }
 
+      // --- Forward-only constraint ---
+      // The animation must never visibly move backward. If the animated position
+      // is still behind the API position (mappedProgress ≤ progress), keep the
+      // animated position so the tram moves forward naturally. If the API position
+      // jumped backward (segment correction, data glitch), snap to the API
+      // position to avoid the tram overshooting the actual location.
       let progressMeters: number
       if (prev) {
-        // Map the current animated position onto the new path
         const animatedPos = positionAtProgress(prev.path, prev.pathLengths, prev.progressMeters)
         const mappedProgress = findProgressOnPath(shapePath, lengths, animatedPos)
-        // Forward-only: keep animated position for smooth movement.
-        // Backward jump (e.g. API correction): snap to the API position.
         progressMeters = mappedProgress <= progress ? mappedProgress : progress
       } else {
         progressMeters = progress
@@ -152,10 +153,10 @@ export function useAnimatedTrams(
 
   // requestAnimationFrame loop — runs at ~60 fps
   useEffect(() => {
-    function frame(now: number) {
+    function animationFrame(now: number) {
       if (pausedRef.current) {
         lastFrameTimeRef.current = null
-        rafRef.current = requestAnimationFrame(frame)
+        rafRef.current = requestAnimationFrame(animationFrame)
         return
       }
 
@@ -169,17 +170,21 @@ export function useAnimatedTrams(
         // Deceleration factor: linear ramp from 1→0 in the last DECEL_THRESHOLD seconds
         const factor = Math.max(0, Math.min(1, currentEta / DECEL_THRESHOLD))
 
+        // --- Speed priority chain ---
+        // Three sources of speed, in decreasing priority:
+        //   1. GPS override  — measured from a user physically on the tram
+        //   2. Segment graph — community-contributed speed profile (bell curve)
+        //   3. API-derived   — estimated from displacement between API ticks
+        // All are multiplied by `factor` (1→0 ramp near arrival) so the tram
+        // decelerates smoothly into the stop rather than snapping to zero.
         const override = speedOverridesRef.current.get(id)
         const graph = segmentGraphsRef.current.get(state.segmentKey)
         let speedMs: number
         if (override !== undefined) {
-          // GPS user's measured speed takes highest priority
           speedMs = override * factor
         } else if (graph) {
-          // Community-contributed speed profile for this segment
           speedMs = interpolateSpeed(graph.points, currentEta) * factor
         } else {
-          // Fall back to API-derived speed estimate
           speedMs = state.speedMs * factor
         }
         const moveDist = speedMs * dt
@@ -191,10 +196,10 @@ export function useAnimatedTrams(
         const bearing = bearingAtProgress(state.path, state.pathLengths, state.progressMeters)
         positionsRef.current.set(id, { lat: pos.lat, lng: pos.lng, bearing })
       }
-      rafRef.current = requestAnimationFrame(frame)
+      rafRef.current = requestAnimationFrame(animationFrame)
     }
 
-    rafRef.current = requestAnimationFrame(frame)
+    rafRef.current = requestAnimationFrame(animationFrame)
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }

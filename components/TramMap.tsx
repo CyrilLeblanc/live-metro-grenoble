@@ -4,8 +4,8 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
-import { makeSegmentKey, AveragedGraph } from '../lib/geo'
-import { GRENOBLE_CENTER, GRENOBLE_BOUNDS } from '../lib/config'
+import { makeSegmentKey, TramMarkerData } from '../lib/geo'
+import { GRENOBLE_CENTER, GRENOBLE_BOUNDS, PANEL_BG, PANEL_BORDER, ACCENT_BLUE } from '../lib/config'
 import { useGtfsData } from '../hooks/useGtfsData'
 import { usePolling } from '../hooks/usePolling'
 import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
@@ -13,7 +13,7 @@ import { useUserOnTram } from '../hooks/useUserOnTram'
 import { useUserLocation } from '../hooks/useUserLocation'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
-import CanvasTramLayer, { TramMarkerData } from './CanvasTramLayer'
+import CanvasTramLayer from './CanvasTramLayer'
 import OnTramOverlay from './OnTramOverlay'
 import UserLocationMarker from './UserLocationMarker'
 import { Stop } from '../lib/gtfs'
@@ -21,6 +21,8 @@ import { useDebugContext } from '../contexts/DebugContext'
 import DebugSegmentLayer from './debug/DebugSegmentLayer'
 import DebugPlaybackLayer from './debug/DebugPlaybackLayer'
 import DebugPanel from './debug/DebugPanel'
+import TramPopup, { PopupTram } from './TramPopup'
+import { useFetchSegmentGraphs } from '../hooks/useFetchSegmentGraphs'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   useMapEvents({ click: () => onMapClick() })
@@ -72,33 +74,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-function useFetchSegmentGraphs(segmentKeys: string[]): Map<string, AveragedGraph> {
-  const [graphs, setGraphs] = useState<Map<string, AveragedGraph>>(new Map())
-  const fetchedKeysRef = useRef<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (segmentKeys.length === 0) return
-    const newKeys = segmentKeys.filter(k => !fetchedKeysRef.current.has(k))
-    if (newKeys.length === 0) return
-
-    const keysStr = newKeys.sort().join(',')
-    fetch(`/api/segment-speeds?keys=${encodeURIComponent(keysStr)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: Record<string, AveragedGraph> | null) => {
-        if (!data) return
-        for (const k of newKeys) fetchedKeysRef.current.add(k)
-        setGraphs(prev => {
-          const next = new Map(prev)
-          for (const [k, v] of Object.entries(data)) next.set(k, v)
-          return next
-        })
-      })
-      .catch(() => { /* ignore */ })
-  }, [segmentKeys])
-
-  return graphs
-}
-
 export default function TramMap() {
   const [initialPosition] = useState(() => parseHashPosition())
   const initialCenter = initialPosition?.center ?? GRENOBLE_CENTER
@@ -106,7 +81,7 @@ export default function TramMap() {
   const [zoom, setZoom] = useState(initialZoom)
   const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null)
   const [selectedStop, setSelectedStop] = useState<{ stop: Stop; color: string } | null>(null)
-  const [popupTram, setPopupTram] = useState<{ id: string; x: number; y: number; data: TramMarkerData } | null>(null)
+  const [popupTram, setPopupTram] = useState<PopupTram | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const stopClickedRef = useRef(false)
 
@@ -128,7 +103,7 @@ export default function TramMap() {
 
   // GPS user-on-tram tracking
   // positionsRef is needed before useAnimatedTrams — use a stable ref that gets populated
-  const positionsPlaceholderRef = useRef<Map<string, import('../hooks/useAnimatedTrams').TramPosition>>(new Map())
+  const positionsPlaceholderRef = useRef<Map<string, import('../hooks/useAnimatedTrams').AnimatedPosition>>(new Map())
 
   const {
     isTracking,
@@ -162,13 +137,13 @@ export default function TramMap() {
   return (
     <div style={{ height: '100vh', position: 'relative' }}>
       {dataLoaded && (
-        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#343139', color: '#ffffff', border: '1px solid #3d3a41' }}
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: PANEL_BG, color: '#ffffff', border: `1px solid ${PANEL_BORDER}` }}
              className="flex items-center gap-2 rounded px-2 py-1 text-sm shadow font-medium w-fit">
           <span style={{ color: 'rgba(255,255,255,0.6)' }}>{secondsLeft}s</span>
           <button
             onClick={refresh}
             className="flex items-center justify-center"
-            style={{ color: '#96dbeb' }}
+            style={{ color: ACCENT_BLUE }}
             title="Force reload"
             aria-label="Force reload"
           >
@@ -232,71 +207,7 @@ export default function TramMap() {
         {isDebug && <DebugPlaybackLayer />}
       </MapContainer>
       {isDebug && <DebugPanel />}
-      {popupTram && (
-        <div
-          style={{
-            position: 'absolute',
-            left: popupTram.x + 16,
-            top: popupTram.y - 16,
-            zIndex: 1000,
-            padding: '10px 12px',
-            fontFamily: 'Arial, Helvetica, sans-serif',
-            fontSize: 13,
-            background: '#343139',
-            color: '#ffffff',
-            borderRadius: 6,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-            minWidth: 180,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <span style={{
-              background: `#${popupTram.data.color}`,
-              color: '#fff',
-              fontWeight: 'bold',
-              fontSize: 13,
-              padding: '2px 8px',
-              borderRadius: 4,
-              minWidth: 24,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              {popupTram.data.line}
-            </span>
-            <span style={{ fontWeight: 600, color: '#ffffff', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
-              {popupTram.data.direction}
-            </span>
-            <button
-              onClick={() => setPopupTram(null)}
-              style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}
-              aria-label="Close"
-            >×</button>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Next stop</span>
-            <span style={{ fontWeight: 500, color: '#ffffff', fontSize: 12, textAlign: 'right' }}>{popupTram.data.nextStop}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>ETA</span>
-            <span style={{ fontWeight: 500, color: '#96dbeb', fontSize: 12, textAlign: 'right' }}>{popupTram.data.eta}</span>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <span style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 600,
-              background: popupTram.data.isRealtime ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
-              color: popupTram.data.isRealtime ? '#4ade80' : 'rgba(255,255,255,0.5)',
-              border: `1px solid ${popupTram.data.isRealtime ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.15)'}`,
-            }}>
-              {popupTram.data.isRealtime ? 'Live' : 'Theoretical'}
-            </span>
-          </div>
-        </div>
-      )}
+      {popupTram && <TramPopup popupTram={popupTram} onClose={() => setPopupTram(null)} />}
       {selectedStop && (
         <StopDeparturePanel
           stop={selectedStop.stop}
