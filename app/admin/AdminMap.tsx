@@ -265,6 +265,7 @@ export default function AdminMap() {
   const [osmWays, setOsmWays] = useState<OsmWay[]>([])
   const [osmRelations, setOsmRelations] = useState<OsmRelation[]>([])
   const [hoveredRelationId, setHoveredRelationId] = useState<number | null>(null)
+  const [activeRelationId, setActiveRelationId] = useState<number | null>(null)
   const [selectedWayIds, setSelectedWayIds] = useState<Set<number>>(new Set())
   const [assembledPolyline, setAssembledPolyline] = useState<LatLng[]>([])
   const [tripStops, setTripStops] = useState<Array<{ stop_id: string; stop_name: string; stop_lat: number; stop_lon: number }>>([])
@@ -506,6 +507,7 @@ export default function AdminMap() {
       })
       line.on('click', (e) => {
         e.originalEvent?.stopPropagation()
+        setActiveRelationId(null) // manual toggle breaks relation-order mode
         setSelectedWayIds((prev) => {
           const next = new Set(prev)
           if (next.has(way.id)) next.delete(way.id)
@@ -578,23 +580,20 @@ export default function AdminMap() {
   }, [allStops, mode])
 
   // ── Rebuild assembled polyline whenever selection changes ────────────────────
-  // If the selected ways exactly match a known OSM relation (same set, any order),
-  // use the relation's member order for assembly — it encodes the correct route
-  // sequence and excludes non-route ways (sidings, depots…) that cause loops.
-  // Otherwise fall back to the nearest-neighbour algorithm.
+  // When activeRelationId is set, use the OSM relation member order — this uses
+  // the canonical route sequence and excludes non-route ways (sidings, depots…)
+  // that cause loops. Falls back to nearest-neighbour for manual selections.
   useEffect(() => {
-    const selectedWays = osmWays.filter((w) => selectedWayIds.has(w.id))
-    const matchingRelation = osmRelations.find(
-      (rel) =>
-        rel.wayIds.length === selectedWayIds.size &&
-        rel.wayIds.every((id) => selectedWayIds.has(id))
-    )
-    if (matchingRelation) {
-      setAssembledPolyline(assembleOrderedWays(osmWays, matchingRelation.wayIds))
-    } else {
-      setAssembledPolyline(assembleWays(selectedWays))
+    if (activeRelationId !== null) {
+      const rel = osmRelations.find((r) => r.id === activeRelationId)
+      if (rel) {
+        setAssembledPolyline(assembleOrderedWays(osmWays, rel.wayIds))
+        return
+      }
     }
-  }, [selectedWayIds, osmWays, osmRelations])
+    const selectedWays = osmWays.filter((w) => selectedWayIds.has(w.id))
+    setAssembledPolyline(assembleWays(selectedWays))
+  }, [selectedWayIds, osmWays, osmRelations, activeRelationId])
 
   // ── Render assembled polyline ────────────────────────────────────────────────
   useEffect(() => {
@@ -813,6 +812,7 @@ export default function AdminMap() {
     setSelectedTrip(entry)
     setSegStep(2)
     setSelectedWayIds(new Set())
+    setActiveRelationId(null)
     setAssembledPolyline([])
     setCutPoints([])
     setSnappingActive(false)
@@ -1063,31 +1063,34 @@ export default function AdminMap() {
                     Relations OSM ({osmRelations.length})
                   </div>
                   {osmRelations.map((rel) => {
-                    const allSelected = rel.wayIds.every((id) => selectedWayIds.has(id))
-                    const someSelected = !allSelected && rel.wayIds.some((id) => selectedWayIds.has(id))
+                    const isActive = activeRelationId === rel.id
                     return (
                       <div
                         key={rel.id}
                         onMouseEnter={() => setHoveredRelationId(rel.id)}
                         onMouseLeave={() => setHoveredRelationId(null)}
                         onClick={() => {
-                          // REPLACE selection with this relation's ways (not union).
-                          // This ensures only OSM-canonised member ways are assembled
-                          // and the ordered assembly path is triggered.
-                          // Clicking an already-active relation clears the selection.
-                          setSelectedWayIds(allSelected ? new Set() : new Set(rel.wayIds))
+                          if (activeRelationId === rel.id) {
+                            // Clicking the active relation again → clear
+                            setActiveRelationId(null)
+                            setSelectedWayIds(new Set())
+                          } else {
+                            // Replace selection with this relation's ways in OSM order
+                            setActiveRelationId(rel.id)
+                            setSelectedWayIds(new Set(rel.wayIds))
+                          }
                         }}
                         style={{
                           padding: '5px 8px',
                           marginBottom: 3,
                           borderRadius: 4,
                           cursor: 'pointer',
-                          background: allSelected ? '#1a3a5c' : someSelected ? '#1a2e3a' : '#1e2d50',
-                          borderLeft: `3px solid ${allSelected ? '#4a90d9' : someSelected ? '#4a90d9' : 'transparent'}`,
+                          background: isActive ? '#1a3a5c' : '#1e2d50',
+                          borderLeft: `3px solid ${isActive ? '#4a90d9' : 'transparent'}`,
                           opacity: hoveredRelationId === rel.id ? 1 : 0.85,
                         }}
                       >
-                        <div style={{ fontSize: 12, color: allSelected ? '#7ec8f7' : '#ddd' }}>
+                        <div style={{ fontSize: 12, color: isActive ? '#7ec8f7' : '#ddd' }}>
                           {rel.name}
                         </div>
                         <div style={{ fontSize: 10, color: '#888' }}>
