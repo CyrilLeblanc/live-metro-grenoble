@@ -533,13 +533,22 @@ export default function AdminMap() {
       : null
 
     for (const [wayId, line] of wayLayersRef.current) {
-      const isSelected = selectedWayIds.has(wayId)
       const isHovered = hoveredWayIds?.has(wayId) ?? false
 
+      // When a relation is active the assembled polyline IS the visual — dim
+      // the raw way segments so they don't create a chaotic overlay.
+      if (activeRelationId !== null && !isHovered) {
+        line.setStyle({ color: '#999', weight: 3, opacity: 0.2 })
+        const el = line.getElement() as SVGElement | null
+        if (el) el.style.filter = ''
+        continue
+      }
+
+      const isSelected = selectedWayIds.has(wayId)
       line.setStyle({
         color: isSelected ? routeColor : isHovered ? '#fff' : '#999',
         weight: isSelected ? 5 : isHovered ? 7 : 3,
-        opacity: isHovered ? 1 : 1,
+        opacity: 1,
       })
 
       // Glow via SVG filter on the path element
@@ -548,7 +557,7 @@ export default function AdminMap() {
         el.style.filter = isHovered ? 'drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px rgba(255,255,255,0.6))' : ''
       }
     }
-  }, [selectedWayIds, selectedTrip, hoveredRelationId, osmRelations])
+  }, [selectedWayIds, selectedTrip, hoveredRelationId, osmRelations, activeRelationId])
 
   // ── Stop dots overlay in clusters mode ───────────────────────────────────────
   useEffect(() => {
