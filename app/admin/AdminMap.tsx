@@ -232,7 +232,7 @@ function sortWayIdsByProximity(ways: OsmWay[], wayIds: number[]): number[] {
   return result.map((w) => w.id)
 }
 
-
+function assembleOrderedWays(ways: OsmWay[], orderedIds: number[]): LatLng[] {
   const wayMap = new Map(ways.map((w) => [w.id, w]))
   const ordered = orderedIds.map((id) => wayMap.get(id)).filter(Boolean) as OsmWay[]
   if (ordered.length === 0) return []
