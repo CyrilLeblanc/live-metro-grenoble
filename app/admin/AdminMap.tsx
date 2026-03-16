@@ -875,6 +875,18 @@ export default function AdminMap() {
     setPendingStopId('')
   }
 
+  function autoPlaceCutPoints() {
+    if (assembledPolyline.length < 2) return
+    const cuts: CutPoint[] = []
+    for (const stop of tripStops) {
+      const cursor: LatLng = { lat: stop.stop_lat, lng: stop.stop_lon }
+      const proj = projectPointOnPolyline(cursor, assembledPolyline)
+      if (!proj) continue
+      cuts.push({ latlng: proj.point, stopId: stop.stop_id, indexOnPolyline: proj.segIdx, tOnSegment: proj.t })
+    }
+    setCutPoints(cuts)
+  }
+
   function removeCutPoint(idx: number) {
     setCutPoints((prev) => prev.filter((_, i) => i !== idx))
   }
@@ -993,6 +1005,12 @@ export default function AdminMap() {
 
         {mode === 'segments' && segStep === 3 && (
           <>
+            <button
+              onClick={autoPlaceCutPoints}
+              style={{ background: '#2980b9', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}
+            >
+              ⟳ Auto-placer depuis arrêts
+            </button>
             <button
               onClick={() => setSnappingActive((v) => !v)}
               style={{ background: snappingActive ? '#e74c3c' : '#555', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}
@@ -1236,7 +1254,7 @@ export default function AdminMap() {
                 </span> → {selectedTrip?.trip_headsign}
               </div>
               <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-                Activez l&apos;outil coupure, cliquez sur le polyline pour placer un point, puis associez-le à un arrêt.
+                Cliquez sur <strong style={{ color: '#5dade2' }}>⟳ Auto-placer</strong> pour projeter automatiquement chaque arrêt sur le tracé, ou utilisez l&apos;outil coupure manuelle pour affiner.
               </div>
 
               {/* Pending cut assignment */}
