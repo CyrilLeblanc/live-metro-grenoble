@@ -10,11 +10,13 @@ import { useGtfsData } from '../hooks/useGtfsData'
 import { usePolling } from '../hooks/usePolling'
 import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
 import { useUserOnTram } from '../hooks/useUserOnTram'
+import { usePassiveTracking } from '../hooks/usePassiveTracking'
 import { useUserLocation } from '../hooks/useUserLocation'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
 import CanvasTramLayer from './CanvasTramLayer'
 import OnTramOverlay from './OnTramOverlay'
+import SettingsPanel from './SettingsPanel'
 import UserLocationMarker from './UserLocationMarker'
 import { Stop } from '../lib/gtfs'
 import { useDebugContext } from '../contexts/DebugContext'
@@ -131,6 +133,14 @@ export default function TramMap() {
     positionsPlaceholderRef.current = positionsRef.current ?? new Map()
   })
 
+  // Passive tracking — opt-in, silent GPS + accelerometer contribution
+  const {
+    enabled: passiveEnabled,
+    setEnabled: setPassiveEnabled,
+    lastContributedCount,
+    clearContributedCount,
+  } = usePassiveTracking(tramStops, segmentPaths, dataLoaded)
+
   // User's own location (auto-prompted on load)
   const { position: userPosition, isPending: locationPending } = useUserLocation()
 
@@ -237,6 +247,12 @@ export default function TramMap() {
         onStop={stopTracking}
         onConfirm={confirmTram}
         onCancel={cancelConfirmation}
+      />
+      <SettingsPanel
+        enabled={passiveEnabled}
+        setEnabled={setPassiveEnabled}
+        lastContributedCount={lastContributedCount}
+        clearContributedCount={clearContributedCount}
       />
     </div>
   )

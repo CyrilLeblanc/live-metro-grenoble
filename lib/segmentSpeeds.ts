@@ -71,15 +71,20 @@ export async function getAveragedGraph(key: string): Promise<AveragedGraph | nul
   const records = await readRecords(key)
   if (records.length === 0) return null
 
-  const meanDuration = records.reduce((s, r) => s + r.totalDurationSec, 0) / records.length
+  const now = Date.now()
+  // Compute per-record temporal decay weight: w = e^(-0.01 * age_days), half-life ≈ 70 days
+  const weights = records.map(r => Math.exp(-0.01 * (now - r.recordedAt) / 86_400_000))
+  const totalWeight = weights.reduce((s, w) => s + w, 0)
+
+  const meanDuration = records.reduce((s, r, i) => s + r.totalDurationSec * weights[i], 0) / totalWeight
   // Build a uniform time grid at SEGMENT_SPEEDS_GRID_STEP_SEC resolution
   const gridCount = Math.max(1, Math.floor(meanDuration / SEGMENT_SPEEDS_GRID_STEP_SEC))
   const points: Array<{ tSec: number; speedMs: number }> = []
 
   for (let i = 0; i <= gridCount; i++) {
     const t = i * SEGMENT_SPEEDS_GRID_STEP_SEC
-    // Average the interpolated speed across all recordings at this time offset
-    const avgSpeed = records.reduce((s, r) => s + interpolateSpeed(r.points, t), 0) / records.length
+    // Weighted average of interpolated speed across all recordings at this time offset
+    const avgSpeed = records.reduce((s, r, idx) => s + interpolateSpeed(r.points, t) * weights[idx], 0) / totalWeight
     points.push({ tSec: t, speedMs: avgSpeed })
   }
 

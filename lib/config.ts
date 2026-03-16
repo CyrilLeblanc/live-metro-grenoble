@@ -123,6 +123,37 @@ export const PANEL_BORDER = '#3d3a41'
 export const ACCENT_BLUE = '#96dbeb'
 
 // ---------------------------------------------------------------------------
+// Passive tracking — usePassiveTracking
+// ---------------------------------------------------------------------------
+
+/** Accelerometer horizontal-axis variance below which the user is considered stationary (m²/s⁴). */
+export const ACCEL_IDLE_THRESHOLD = 0.15
+
+/** Accelerometer horizontal-axis variance above which the user is considered moving (m²/s⁴). */
+export const ACCEL_MOVE_THRESHOLD = 0.5
+
+/** Maximum GPS accuracy accepted for passive tracking (metres). */
+export const PASSIVE_MAX_ACCURACY_M = 35
+
+/** Maximum duration of a valid passive segment (seconds). */
+export const PASSIVE_MAX_SEGMENT_DURATION_S = 180
+
+/** Maximum distance from a GPS point to the nearest GTFS segment path to be eligible (metres). */
+export const PASSIVE_MAX_DISTANCE_TO_LINE_M = 50
+
+/** Minimum GPS speed to exclude walking when no accelerometer is available (m/s ≈ 6 km/h). */
+export const PASSIVE_MIN_SPEED_MS = 1.67
+
+/** Minimum number of valid GPS points for a segment to be submitted. */
+export const PASSIVE_MIN_POINTS_PER_SEGMENT = 10
+
+/** Lower bound of walking step frequency for Z-axis peak detection (Hz). */
+export const WALKING_STEP_FREQ_MIN_HZ = 1.5
+
+/** Upper bound of walking step frequency for Z-axis peak detection (Hz). */
+export const WALKING_STEP_FREQ_MAX_HZ = 2.5
+
+// ---------------------------------------------------------------------------
 // Unit conversions
 // ---------------------------------------------------------------------------
 

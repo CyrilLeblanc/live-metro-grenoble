@@ -160,6 +160,24 @@ The animation hook prefers speed sources in this order:
 2. Averaged segment graph (from past GPS recordings)
 3. API-estimated speed (distance delta between the last two poll responses)
 
+## Passive speed contribution (opt-in)
+
+In the settings panel (gear icon ⚙, bottom-left of the map), users can enable **passive contribution**. Once active, the app silently collects GPS fixes and accelerometer data — no further interaction required. When the app detects that a tram journey has ended (the user moves away from all GTFS track geometry for more than 30 seconds), it runs a post-hoc matching algorithm:
+
+1. Compute per-point GPS speed (5-second sliding window of haversine distances)
+2. Associate each GPS point to the nearest tram stop (within 50 m)
+3. Reconstruct the ordered stop sequence and validate each consecutive pair against known GTFS segments
+4. For each valid segment: validate duration (≤ 180 s), point count (≥ 10), mean speed (> 1.67 m/s) and absence of walking signature
+5. Submit each valid segment to `POST /api/segment-speeds`
+
+**Accelerometer**: a 2-second sliding variance window on the horizontal axes (X/Y) distinguishes stopped / moving / uncertain states. Walking is detected by counting Z-axis peaks in the 1.5–2.5 Hz range and excluded from contributions even when GPS speed looks tram-like. On iOS 13+, `DeviceMotionEvent.requestPermission()` is prompted on the first toggle-on. If denied, the system falls back to GPS-only detection with a subtle warning shown in the panel.
+
+**Temporal decay**: `getAveragedGraph` weights each recording by `e^{−0.01 × age_days}` (half-life ≈ 70 days), so the system naturally adapts if commercial speeds change over time.
+
+**Outlier filtering**: the backend rejects a new recording whose mean speed deviates more than 2.5 standard deviations from the existing distribution for that segment (HTTP 422), preventing corrupt data from distorting the averaged profile.
+
+The passive system feeds the same `data/segment-speeds/` store as the explicit "I'm on a tram" flow, and benefits all users viewing those segments.
+
 ## Known limitations
 
 - **Positions are estimates** — no raw GPS signal; positions are interpolated between scheduled stops
@@ -186,11 +204,13 @@ components/
   StopDeparturePanel.tsx            Side panel showing next departures for a selected stop
   CanvasTramLayer.tsx               Canvas-based tram marker layer
   OnTramOverlay.tsx                 Fixed overlay: idle / searching / confirm / active GPS states
+  SettingsPanel.tsx                 Gear-icon toggle for passive tracking opt-in; contribution toast
 hooks/
   useAnimatedTrams.ts               rAF animation loop; accepts segment graphs + speed overrides
   useGtfsData.ts                    Loads and transforms all five GTFS files; builds shapes, stops, colour maps
   usePolling.ts                     Manages 10-second tram position polling cycle with countdown timer
   useUserOnTram.ts                  GPS tracking, EWMA speed, segment buffer, auto-POST on stop crossing
+  usePassiveTracking.ts             Passive GPS+accel collection, post-hoc trip matching, auto-submission
 lib/
   config.ts                         Centralised constants (viewport bounds, animation, GPS, polling thresholds)
   gtfs.ts                           Loads & caches public/gtfs/*.json
