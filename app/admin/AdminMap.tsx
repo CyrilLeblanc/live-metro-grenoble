@@ -201,14 +201,38 @@ function assembleWays(ways: OsmWay[]): LatLng[] {
 }
 
 /**
- * Assembles ways in the order prescribed by an OSM relation.
- * Only the orientation of each way (forward vs reversed) is determined
- * automatically, by picking whichever end is closest to the current
- * polyline tip. This avoids the nearest-neighbour topology issues that
- * appear when non-relation `railway=tram` ways (sidings, depots…) are
- * mixed in.
+ * Sorts a set of way IDs into a geographically sequential order using
+ * greedy nearest-endpoint search. Returns the sorted ID array.
+ * Used to reorder OSM relation members whose list order may be arbitrary.
  */
-function assembleOrderedWays(ways: OsmWay[], orderedIds: number[]): LatLng[] {
+function sortWayIdsByProximity(ways: OsmWay[], wayIds: number[]): number[] {
+  const wayMap = new Map(ways.map((w) => [w.id, w]))
+  const toSort = wayIds.map((id) => wayMap.get(id)).filter(Boolean) as OsmWay[]
+  if (toSort.length <= 1) return toSort.map((w) => w.id)
+
+  const remaining = [...toSort]
+  const result: OsmWay[] = [remaining.splice(0, 1)[0]]
+  let currentEnd = result[0].coords[result[0].coords.length - 1]
+
+  while (remaining.length > 0) {
+    let bestIdx = 0
+    let bestDist = Infinity
+    for (let i = 0; i < remaining.length; i++) {
+      const c = remaining[i].coords
+      const d = Math.min(distLatLng(currentEnd, c[0]), distLatLng(currentEnd, c[c.length - 1]))
+      if (d < bestDist) { bestDist = d; bestIdx = i }
+    }
+    const [way] = remaining.splice(bestIdx, 1)
+    result.push(way)
+    const c = way.coords
+    currentEnd = distLatLng(currentEnd, c[0]) <= distLatLng(currentEnd, c[c.length - 1])
+      ? c[c.length - 1]
+      : c[0]
+  }
+  return result.map((w) => w.id)
+}
+
+
   const wayMap = new Map(ways.map((w) => [w.id, w]))
   const ordered = orderedIds.map((id) => wayMap.get(id)).filter(Boolean) as OsmWay[]
   if (ordered.length === 0) return []
@@ -1083,8 +1107,11 @@ export default function AdminMap() {
                             setActiveRelationWayIds([])
                             setSelectedWayIds(new Set())
                           } else {
+                            // Sort relation ways geographically — OSM member order
+                            // is often arbitrary and not sequential along the route.
+                            const sorted = sortWayIdsByProximity(osmWays, rel.wayIds)
                             setActiveRelationId(rel.id)
-                            setActiveRelationWayIds([...rel.wayIds])
+                            setActiveRelationWayIds(sorted)
                             setSelectedWayIds(new Set(rel.wayIds))
                           }
                         }}
