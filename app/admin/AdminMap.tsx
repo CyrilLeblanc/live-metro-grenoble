@@ -266,6 +266,9 @@ export default function AdminMap() {
   const [osmRelations, setOsmRelations] = useState<OsmRelation[]>([])
   const [hoveredRelationId, setHoveredRelationId] = useState<number | null>(null)
   const [activeRelationId, setActiveRelationId] = useState<number | null>(null)
+  const [activeRelationWayIds, setActiveRelationWayIds] = useState<number[]>([])
+  const [hoveredWayId, setHoveredWayId] = useState<number | null>(null)
+  const [dragWayIdx, setDragWayIdx] = useState<number | null>(null)
   const [selectedWayIds, setSelectedWayIds] = useState<Set<number>>(new Set())
   const [assembledPolyline, setAssembledPolyline] = useState<LatLng[]>([])
   const [tripStops, setTripStops] = useState<Array<{ stop_id: string; stop_name: string; stop_lat: number; stop_lon: number }>>([])
@@ -533,11 +536,13 @@ export default function AdminMap() {
       : null
 
     for (const [wayId, line] of wayLayersRef.current) {
-      const isHovered = hoveredWayIds?.has(wayId) ?? false
+      const isRelHovered = hoveredWayIds?.has(wayId) ?? false
+      const isItemHovered = wayId === hoveredWayId
+      const isGlowed = isRelHovered || isItemHovered
 
       // When a relation is active the assembled polyline IS the visual — dim
       // the raw way segments so they don't create a chaotic overlay.
-      if (activeRelationId !== null && !isHovered) {
+      if (activeRelationId !== null && !isGlowed) {
         line.setStyle({ color: '#999', weight: 3, opacity: 0.2 })
         const el = line.getElement() as SVGElement | null
         if (el) el.style.filter = ''
@@ -546,18 +551,17 @@ export default function AdminMap() {
 
       const isSelected = selectedWayIds.has(wayId)
       line.setStyle({
-        color: isSelected ? routeColor : isHovered ? '#fff' : '#999',
-        weight: isSelected ? 5 : isHovered ? 7 : 3,
+        color: isSelected ? routeColor : isGlowed ? '#fff' : '#999',
+        weight: isSelected ? 5 : isGlowed ? 7 : 3,
         opacity: 1,
       })
 
-      // Glow via SVG filter on the path element
       const el = line.getElement() as SVGElement | null
       if (el) {
-        el.style.filter = isHovered ? 'drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px rgba(255,255,255,0.6))' : ''
+        el.style.filter = isGlowed ? 'drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px rgba(255,255,255,0.6))' : ''
       }
     }
-  }, [selectedWayIds, selectedTrip, hoveredRelationId, osmRelations, activeRelationId])
+  }, [selectedWayIds, selectedTrip, hoveredRelationId, osmRelations, activeRelationId, hoveredWayId])
 
   // ── Stop dots overlay in clusters mode ───────────────────────────────────────
   useEffect(() => {
@@ -593,16 +597,13 @@ export default function AdminMap() {
   // the canonical route sequence and excludes non-route ways (sidings, depots…)
   // that cause loops. Falls back to nearest-neighbour for manual selections.
   useEffect(() => {
-    if (activeRelationId !== null) {
-      const rel = osmRelations.find((r) => r.id === activeRelationId)
-      if (rel) {
-        setAssembledPolyline(assembleOrderedWays(osmWays, rel.wayIds))
-        return
-      }
+    if (activeRelationId !== null && activeRelationWayIds.length > 0) {
+      setAssembledPolyline(assembleOrderedWays(osmWays, activeRelationWayIds))
+      return
     }
     const selectedWays = osmWays.filter((w) => selectedWayIds.has(w.id))
     setAssembledPolyline(assembleWays(selectedWays))
-  }, [selectedWayIds, osmWays, osmRelations, activeRelationId])
+  }, [selectedWayIds, osmWays, activeRelationId, activeRelationWayIds])
 
   // ── Render assembled polyline ────────────────────────────────────────────────
   useEffect(() => {
@@ -822,6 +823,7 @@ export default function AdminMap() {
     setSegStep(2)
     setSelectedWayIds(new Set())
     setActiveRelationId(null)
+    setActiveRelationWayIds([])
     setAssembledPolyline([])
     setCutPoints([])
     setSnappingActive(false)
@@ -1061,15 +1063,12 @@ export default function AdminMap() {
                 </span>
                 {' → '}{selectedTrip?.trip_headsign}
               </div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-                Survolez une relation pour la prévisualiser, cliquez pour sélectionner toutes ses voies. Vous pouvez aussi cliquer les voies individuellement.
-              </div>
 
-              {/* OSM relations list */}
+              {/* OSM relations list — always visible for switching */}
               {osmRelations.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
-                    Relations OSM ({osmRelations.length})
+                    Relations OSM
                   </div>
                   {osmRelations.map((rel) => {
                     const isActive = activeRelationId === rel.id
@@ -1080,18 +1079,18 @@ export default function AdminMap() {
                         onMouseLeave={() => setHoveredRelationId(null)}
                         onClick={() => {
                           if (activeRelationId === rel.id) {
-                            // Clicking the active relation again → clear
                             setActiveRelationId(null)
+                            setActiveRelationWayIds([])
                             setSelectedWayIds(new Set())
                           } else {
-                            // Replace selection with this relation's ways in OSM order
                             setActiveRelationId(rel.id)
+                            setActiveRelationWayIds([...rel.wayIds])
                             setSelectedWayIds(new Set(rel.wayIds))
                           }
                         }}
                         style={{
-                          padding: '5px 8px',
-                          marginBottom: 3,
+                          padding: '4px 8px',
+                          marginBottom: 2,
                           borderRadius: 4,
                           cursor: 'pointer',
                           background: isActive ? '#1a3a5c' : '#1e2d50',
@@ -1099,12 +1098,73 @@ export default function AdminMap() {
                           opacity: hoveredRelationId === rel.id ? 1 : 0.85,
                         }}
                       >
-                        <div style={{ fontSize: 12, color: isActive ? '#7ec8f7' : '#ddd' }}>
-                          {rel.name}
-                        </div>
-                        <div style={{ fontSize: 10, color: '#888' }}>
-                          {rel.wayIds.length} voies · id {rel.id}
-                        </div>
+                        <div style={{ fontSize: 12, color: isActive ? '#7ec8f7' : '#ddd' }}>{rel.name}</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>{rel.wayIds.length} voies · id {rel.id}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Ordered way list — shown when a relation is active */}
+              {activeRelationId !== null && activeRelationWayIds.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    Voies ({activeRelationWayIds.length}) — réordonner / supprimer
+                  </div>
+                  {activeRelationWayIds.map((wayId, idx) => {
+                    const way = osmWays.find((w) => w.id === wayId)
+                    return (
+                      <div
+                        key={`${wayId}-${idx}`}
+                        draggable
+                        onDragStart={() => setDragWayIdx(idx)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => {
+                          if (dragWayIdx === null || dragWayIdx === idx) return
+                          setActiveRelationWayIds((prev) => {
+                            const next = [...prev]
+                            const [item] = next.splice(dragWayIdx, 1)
+                            next.splice(idx, 0, item)
+                            return next
+                          })
+                          setDragWayIdx(null)
+                        }}
+                        onDragEnd={() => setDragWayIdx(null)}
+                        onMouseEnter={() => setHoveredWayId(wayId)}
+                        onMouseLeave={() => setHoveredWayId(null)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '3px 6px',
+                          marginBottom: 2,
+                          borderRadius: 3,
+                          cursor: 'grab',
+                          background: hoveredWayId === wayId ? '#1e3a5c' : dragWayIdx === idx ? '#2a3a50' : '#192840',
+                          border: `1px solid ${hoveredWayId === wayId ? '#4a90d9' : 'transparent'}`,
+                          opacity: dragWayIdx === idx ? 0.5 : 1,
+                          userSelect: 'none',
+                        }}
+                      >
+                        <span style={{ color: '#555', fontSize: 13, lineHeight: 1, flexShrink: 0 }}>≡</span>
+                        <span style={{ flex: 1, fontSize: 11, color: '#ccc', fontFamily: 'monospace' }}>
+                          {wayId}
+                          {way && <span style={{ color: '#666' }}> · {way.coords.length}pts</span>}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setActiveRelationWayIds((prev) => prev.filter((_, i) => i !== idx))
+                            setSelectedWayIds((prev) => {
+                              const next = new Set(prev)
+                              next.delete(wayId)
+                              return next
+                            })
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#c0392b', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
+                          title="Supprimer"
+                        >✕</button>
                       </div>
                     )
                   })}
@@ -1112,7 +1172,7 @@ export default function AdminMap() {
               )}
 
               <div style={{ fontSize: 12, color: '#bbb', marginBottom: 6 }}>
-                {selectedWayIds.size} voie(s) sélectionnée(s) — {assembledPolyline.length} points
+                {assembledPolyline.length} points assemblés
               </div>
               {cutPoints.length > 0 && (
                 <div style={{ fontSize: 12, color: '#2ecc71', marginBottom: 6 }}>
@@ -1120,7 +1180,13 @@ export default function AdminMap() {
                 </div>
               )}
               <button
-                onClick={() => { setSelectedWayIds(new Set()); setAssembledPolyline([]); setCutPoints([]) }}
+                onClick={() => {
+                  setSelectedWayIds(new Set())
+                  setActiveRelationId(null)
+                  setActiveRelationWayIds([])
+                  setAssembledPolyline([])
+                  setCutPoints([])
+                }}
                 style={{ background: '#c0392b', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
               >
                 Réinitialiser
