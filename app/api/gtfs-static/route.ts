@@ -30,13 +30,14 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const [rawRoutes, rawStops, rawTrips, rawStopTimes, rawShapes, rawSegmentPaths] = await Promise.all([
+  const [rawRoutes, rawStops, rawTrips, rawStopTimes, rawShapes, rawSegmentPaths, rawLinePaths] = await Promise.all([
     loadJson<Route[]>('routes.json'),
     loadJson<Record<string, string>[]>('stops.json'),
     loadJson<Record<string, string>[]>('trips.json'),
     loadJson<Record<string, string>[]>('stop_times.json'),
     loadJson<Record<string, { lat: string; lon: string; sequence: number }[]>>('shapes.json'),
     loadJson<Record<string, { lat: number; lng: number }[]>>('segment-paths.json'),
+    loadJson<Record<string, { lat: number; lng: number }[]>>('line-paths.json').catch(() => ({} as Record<string, { lat: number; lng: number }[]>)),
   ])
 
   const stops: Stop[] = rawStops.map((s) => ({
@@ -75,6 +76,7 @@ export async function GET(request: NextRequest) {
     stopTimes,
     shapes,
     segmentPaths: rawSegmentPaths,
+    linePaths: rawLinePaths,
   }
 
   bundleEtag = `"${createHash('sha1').update(JSON.stringify(bundleCache)).digest('hex').slice(0, 16)}"`

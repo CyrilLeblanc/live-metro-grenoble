@@ -89,7 +89,7 @@ export default function TramMap() {
   const { isDebug, frozenByPanel } = useDebugContext()
 
   // Load static GTFS data (routes, stops, shapes)
-  const { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded } = useGtfsData()
+  const { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, linePaths, dataLoaded } = useGtfsData()
 
   // Poll real-time tram positions every 10 seconds
   const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded, frozenByPanel)
@@ -163,14 +163,28 @@ export default function TramMap() {
         <TileLayer
           url="/api/tiles/{z}/{x}/{y}.png"
         />
-        {lineShapes.map(({ route, points }) => (
-          <Polyline
-            key={`${route.route_id}-${points[0]?.shape_id}`}
-            positions={points.map(p => [p.shape_pt_lat, p.shape_pt_lon])}
-            pathOptions={{ color: `#${route.route_color}`, weight: 1 }}
-            smoothFactor={0.1}
-          />
-        ))}
+        {linePaths.size > 0
+          ? Array.from(linePaths.entries()).map(([key, points]) => {
+              const shortName = key.split('|')[0]
+              const route = lineShapes.find(s => s.route.route_short_name === shortName)?.route
+              return (
+                <Polyline
+                  key={key}
+                  positions={points.map(p => [p.lat, p.lng] as [number, number])}
+                  pathOptions={{ color: `#${route?.route_color ?? '888888'}`, weight: 4 }}
+                  smoothFactor={0.1}
+                />
+              )
+            })
+          : lineShapes.map(({ route, points }) => (
+              <Polyline
+                key={`${route.route_id}-${points[0]?.shape_id}`}
+                positions={points.map(p => [p.shape_pt_lat, p.shape_pt_lon])}
+                pathOptions={{ color: `#${route.route_color}`, weight: 1 }}
+                smoothFactor={0.1}
+              />
+            ))
+        }
         {userPosition && (
           <UserLocationMarker position={userPosition} isPending={locationPending} />
         )}

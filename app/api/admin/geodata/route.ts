@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { invalidateGtfsCache } from '../../gtfs-static/route'
 
-const ALLOWED_FILES = ['clusters', 'segment-paths'] as const
+const ALLOWED_FILES = ['clusters', 'segment-paths', 'line-paths'] as const
 type AllowedFile = typeof ALLOWED_FILES[number]
 
 function filePath(file: AllowedFile): string {
@@ -13,7 +13,7 @@ function filePath(file: AllowedFile): string {
 export async function GET(request: NextRequest) {
   const file = request.nextUrl.searchParams.get('file') as AllowedFile | null
   if (!file || !ALLOWED_FILES.includes(file)) {
-    return NextResponse.json({ error: 'Invalid file parameter. Use: clusters or segment-paths' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid file parameter. Use: clusters, segment-paths, or line-paths' }, { status: 400 })
   }
 
   try {
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const file = request.nextUrl.searchParams.get('file') as AllowedFile | null
   if (!file || !ALLOWED_FILES.includes(file)) {
-    return NextResponse.json({ error: 'Invalid file parameter. Use: clusters or segment-paths' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid file parameter. Use: clusters, segment-paths, or line-paths' }, { status: 400 })
   }
 
   let body: unknown

@@ -963,6 +963,31 @@ export default function AdminMap() {
     }
   }
 
+  async function saveLinePath() {
+    if (!assembledPolyline.length || !selectedTrip) return
+    const key = `${selectedTrip.route_short_name}|${selectedTrip.direction_id}`
+    setStatus('Sauvegarde du tracé de ligne…')
+    try {
+      let existing: Record<string, LatLng[]> = {}
+      try {
+        const res = await fetch('/api/admin/geodata?file=line-paths')
+        if (res.ok) existing = await res.json()
+      } catch { /* ignore */ }
+
+      const merged = { ...existing, [key]: assembledPolyline }
+
+      const res = await fetch('/api/admin/geodata?file=line-paths', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setStatus(`Tracé ${key} sauvegardé ✓`)
+    } catch (e) {
+      setStatus(`Erreur sauvegarde: ${e}`)
+    }
+  }
+
   // ── Grouped trips for display ────────────────────────────────────────────────
   const groupedTrips = tripEntries.reduce<Map<string, TripEntry[]>>((acc, t) => {
     if (!acc.has(t.route_short_name)) acc.set(t.route_short_name, [])
@@ -1223,6 +1248,15 @@ export default function AdminMap() {
                 <div style={{ fontSize: 12, color: '#2ecc71', marginBottom: 6 }}>
                   ✓ {cutPoints.length} point(s) de coupure conservés
                 </div>
+              )}
+              {assembledPolyline.length > 0 && (
+                <button
+                  onClick={saveLinePath}
+                  style={{ background: '#1a6e3a', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 12, marginBottom: 8, display: 'block' }}
+                  title={`Sauvegarde le tracé complet pour Ligne ${selectedTrip?.route_short_name} direction ${selectedTrip?.direction_id}`}
+                >
+                  Sauvegarder tracé de ligne
+                </button>
               )}
               <button
                 onClick={() => {

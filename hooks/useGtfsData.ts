@@ -21,6 +21,7 @@ export interface GtfsData {
   routeColorMap: Map<string, string>
   segmentPaths: Map<string, LatLng[]>
   segmentStops: Map<string, { stopAId: string; stopBId: string }>
+  linePaths: Map<string, LatLng[]>
   dataLoaded: boolean
 }
 
@@ -31,12 +32,14 @@ export function useGtfsData(): GtfsData {
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [segmentPaths, setSegmentPaths] = useState<Map<string, LatLng[]>>(new Map())
   const [segmentStops, setSegmentStops] = useState<Map<string, { stopAId: string; stopBId: string }>>(new Map())
+  const [linePaths, setLinePaths] = useState<Map<string, LatLng[]>>(new Map())
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
     async function fetchAndTransformGtfs() {
-      const { routes, trips, shapes, stops, stopTimes, segmentPaths: segPathsRaw } = await fetchGtfsStatic()
+      const { routes, trips, shapes, stops, stopTimes, segmentPaths: segPathsRaw, linePaths: linePathsRaw } = await fetchGtfsStatic()
       const segPaths = new Map(Object.entries(segPathsRaw))
+      const linePaths = new Map(Object.entries(linePathsRaw ?? {}))
 
       // --- Build shape map: shape_id → sorted ShapePoint[] ---
       const shapeMap = new Map<string, ShapePoint[]>()
@@ -151,6 +154,7 @@ export function useGtfsData(): GtfsData {
 
       setTramStops(tramClusters)
       setSegmentPaths(segPaths)
+      setLinePaths(linePaths)
 
       // Build segmentStops: segmentKey → { stopAId, stopBId }
       const tripStopTimes = new Map<string, typeof stopTimes>()
@@ -175,5 +179,5 @@ export function useGtfsData(): GtfsData {
     fetchAndTransformGtfs()
   }, [])
 
-  return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded }
+  return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, linePaths, dataLoaded }
 }
