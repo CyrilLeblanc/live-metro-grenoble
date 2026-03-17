@@ -263,6 +263,19 @@ async function postGeodata(file: string, body: unknown): Promise<void> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
 }
 
+/**
+ * Loads the saved line-paths.json.
+ * Key format: "routeShortName|directionId" (e.g. "A|0", "B|1").
+ * Returns an empty object if the file doesn't exist yet.
+ */
+export async function loadLinePaths(): Promise<Record<string, LatLng[]>> {
+  try {
+    const res = await fetch('/api/admin/geodata?file=line-paths')
+    if (res.ok) return await res.json()
+  } catch { /* ignore */ }
+  return {}
+}
+
 /** Saves the full clusters array to clusters.json. */
 export async function saveClusters(clusters: Cluster[]): Promise<void> {
   await postGeodata('clusters', clusters)

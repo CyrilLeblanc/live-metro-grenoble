@@ -19,6 +19,7 @@ import {
 import {
   loadClusters,
   loadTripEntries,
+  loadLinePaths,
   getTripStops,
   fetchOsmData,
   saveClusters,
@@ -58,6 +59,7 @@ export default function AdminMap() {
   const cutMarkersRef = useRef<L.Marker[]>([])
   const snapMarkerRef = useRef<L.Marker | null>(null)
   const previewStopMarkersRef = useRef<L.CircleMarker[]>([])
+  const previewPolylineRef = useRef<L.Polyline | null>(null)
   const clustersHistoryRef = useRef<Cluster[][]>([])
 
   // ── Shared state ─────────────────────────────────────────────────────────────
@@ -75,7 +77,9 @@ export default function AdminMap() {
   const [segStep, setSegStep] = useState<SegStep>(1)
   const [tripEntries, setTripEntries] = useState<TripEntry[]>([])
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
+  const [linePaths, setLinePaths] = useState<Record<string, LatLng[]>>({})
   const [selectedTrip, setSelectedTrip] = useState<TripEntry | null>(null)
+  const [hoveredTripEntry, setHoveredTripEntry] = useState<TripEntry | null>(null)
   const [osmWays, setOsmWays] = useState<OsmWay[]>([])
   const [osmRelations, setOsmRelations] = useState<OsmRelation[]>([])
   // hoveredRelationId and hoveredWayId drive Leaflet style updates imperatively
@@ -328,6 +332,28 @@ export default function AdminMap() {
     return () => { previewStopMarkersRef.current.forEach((m) => m.remove()); previewStopMarkersRef.current = [] }
   }, [previewStops, mode, segStep])
 
+  // ── Effect: Render hover-preview line path (step 1 only) ─────────────────────
+  useEffect(() => {
+    const L = leafletRef.current
+    const map = mapRef.current
+    if (!L || !map) return
+
+    previewPolylineRef.current?.remove()
+    previewPolylineRef.current = null
+
+    if (mode !== 'segments' || segStep !== 1 || !hoveredTripEntry) return
+    const key = `${hoveredTripEntry.route_short_name}|${hoveredTripEntry.direction_id}`
+    const points = linePaths[key]
+    if (!points || points.length < 2) return
+
+    previewPolylineRef.current = L.polyline(
+      points.map((p) => [p.lat, p.lng] as [number, number]),
+      { color: hexColor(hoveredTripEntry.route_color), weight: 4, opacity: 0.8 }
+    ).addTo(map)
+
+    return () => { previewPolylineRef.current?.remove(); previewPolylineRef.current = null }
+  }, [hoveredTripEntry, linePaths, mode, segStep])
+
   // ── Effect: Render cut point markers ────────────────────────────────────────
   useEffect(() => {
     const L = leafletRef.current
@@ -438,9 +464,13 @@ export default function AdminMap() {
   async function loadTripsData() {
     setStatus('Chargement des trips…')
     try {
-      const { tripEntries: entries, routeColorMap: colorMap } = await loadTripEntries()
+      const [{ tripEntries: entries, routeColorMap: colorMap }, paths] = await Promise.all([
+        loadTripEntries(),
+        loadLinePaths(),
+      ])
       setTripEntries(entries)
       setRouteColorMap(colorMap)
+      setLinePaths(paths)
       setStatus(`${entries.length} trajets chargés`)
     } catch (e) {
       setStatus(`Erreur: ${e}`)
@@ -476,11 +506,13 @@ export default function AdminMap() {
   // ── Trip selection ────────────────────────────────────────────────────────────
 
   function handleTripHover(entry: TripEntry | null) {
+    setHoveredTripEntry(entry)
     setPreviewStops(entry ? getTripStops(entry.trip_id) : [])
   }
 
   function selectTrip(entry: TripEntry) {
     setPreviewStops([])
+    setHoveredTripEntry(null)
     setSelectedTrip(entry)
     setSegStep(2)
     setSelectedWayIds(new Set())
@@ -544,6 +576,7 @@ export default function AdminMap() {
     setStatus('Sauvegarde du tracé de ligne…')
     try {
       await saveLinePath(key, assembledPolyline)
+      setLinePaths((prev) => ({ ...prev, [key]: assembledPolyline }))
       setStatus(`Tracé ${key} sauvegardé ✓`)
     } catch (e) {
       setStatus(`Erreur sauvegarde: ${e}`)
@@ -628,7 +661,12 @@ export default function AdminMap() {
           )}
 
           {mode === 'segments' && segStep === 1 && (
-            <TripSelector tripEntries={tripEntries} onSelect={selectTrip} onHover={handleTripHover} />
+            <TripSelector
+              tripEntries={tripEntries}
+              existingKeys={linePaths}
+              onSelect={selectTrip}
+              onHover={handleTripHover}
+            />
           )}
 
           {mode === 'segments' && segStep === 2 && selectedTrip && (
