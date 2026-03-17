@@ -234,7 +234,8 @@ export default function AdminMap() {
 
     if (mode !== 'clusters' || allStops.length === 0) return
 
-    for (const stop of allStops) {
+    const clusterStopIds = new Set(clusters.flatMap((c) => c.stopIds))
+    for (const stop of allStops.filter((s) => clusterStopIds.has(s.stop_id))) {
       const dot = L.circleMarker([stop.stop_lat, stop.stop_lon], {
         radius: 4,
         color: 'rgba(255,255,255,0.4)',
@@ -247,7 +248,7 @@ export default function AdminMap() {
     }
 
     return () => { stopDotsRef.current.forEach((m) => m.remove()); stopDotsRef.current.clear() }
-  }, [allStops, mode])
+  }, [allStops, clusters, mode])
 
   // ── Effect: Rebuild assembled polyline when way selection changes ────────────
   // When activeRelationId is set, use the canonical OSM relation member order to
