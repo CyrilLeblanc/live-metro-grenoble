@@ -219,6 +219,12 @@ export async function fetchOsmData(): Promise<OverpassData> {
   const wayMap = new Map<number, OsmWay>()
   const relations: OsmRelation[] = []
 
+  // Track which way IDs are track ways (non-platform relation members).
+  // Top-level ways from the bbox query may include platform ways that share
+  // the railway=tram tag — we exclude them by only keeping ways that appear
+  // as track members in at least one relation.
+  const trackWayIds = new Set<number>()
+
   for (const el of (data.elements ?? []) as RawEl[]) {
     if (el.type === 'way' && (el.geometry?.length ?? 0) > 1) {
       wayMap.set(el.id, {
@@ -229,7 +235,10 @@ export async function fetchOsmData(): Promise<OverpassData> {
       const wayIds: number[] = []
       for (const member of el.members ?? []) {
         if (member.type !== 'way') continue
+        // Skip platform and stop members — they are station infrastructure, not track
+        if (member.role === 'platform' || member.role === 'stop') continue
         wayIds.push(member.ref)
+        trackWayIds.add(member.ref)
         // Capture geometry from relation members not already present as direct ways
         if (!wayMap.has(member.ref) && (member.geometry?.length ?? 0) > 1) {
           wayMap.set(member.ref, {
@@ -246,7 +255,8 @@ export async function fetchOsmData(): Promise<OverpassData> {
     }
   }
 
-  const ways = [...wayMap.values()].filter((w) => w.coords.length > 1)
+  // Only keep ways that are actual track members of a relation (excludes platform ways)
+  const ways = [...wayMap.values()].filter((w) => w.coords.length > 1 && trackWayIds.has(w.id))
   overpassCache = { ways, relations }
   return overpassCache
 }
