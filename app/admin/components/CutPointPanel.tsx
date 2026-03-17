@@ -8,11 +8,12 @@
  * not here, because they need to control Leaflet event handlers directly.
  */
 
-import type { TripEntry, TripStop, CutPoint, PendingCut } from '../types'
+import type { TripStop, CutPoint, PendingCut } from '../types'
 import { hexColor } from '../lib/geo'
 
 interface Props {
-  selectedTrip: TripEntry
+  /** Display label and accent colour for the current segment being cut. */
+  header: { title: string; color: string }
   tripStops: TripStop[]
   cutPoints: CutPoint[]
   snappingActive: boolean
@@ -26,7 +27,7 @@ interface Props {
 }
 
 export default function CutPointPanel({
-  selectedTrip,
+  header,
   tripStops,
   cutPoints,
   snappingActive,
@@ -39,13 +40,9 @@ export default function CutPointPanel({
 }: Props) {
   return (
     <div>
-      {/* Trip header */}
-      <div style={{ fontWeight: 'bold', marginBottom: 6 }}>
-        Découpage —{' '}
-        <span style={{ color: hexColor(selectedTrip.route_color) }}>
-          {selectedTrip.route_short_name}
-        </span>{' '}
-        → {selectedTrip.trip_headsign}
+      {/* Header */}
+      <div style={{ fontWeight: 'bold', marginBottom: 6, color: hexColor(header.color) }}>
+        Découpage — {header.title}
       </div>
       <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
         Cliquez sur{' '}

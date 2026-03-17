@@ -39,7 +39,16 @@ export function useGtfsData(): GtfsData {
     async function fetchAndTransformGtfs() {
       const { routes, trips, shapes, stops, stopTimes, segmentPaths: segPathsRaw, linePaths: linePathsRaw } = await fetchGtfsStatic()
       const segPaths = new Map(Object.entries(segPathsRaw))
-      const linePaths = new Map(Object.entries(linePathsRaw ?? {}))
+      const linePaths = new Map<string, LatLng[]>()
+      for (const [lineKey, segKeys] of Object.entries(linePathsRaw ?? {})) {
+        const coords: LatLng[] = []
+        for (const sk of segKeys as string[]) {
+          const seg = segPaths.get(sk)
+          if (!seg) { console.warn(`line-paths: missing segment ${sk} for ${lineKey}`); continue }
+          coords.push(...seg)
+        }
+        if (coords.length > 0) linePaths.set(lineKey, coords)
+      }
 
       // --- Build shape map: shape_id → sorted ShapePoint[] ---
       const shapeMap = new Map<string, ShapePoint[]>()

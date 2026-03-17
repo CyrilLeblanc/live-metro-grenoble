@@ -50,7 +50,7 @@ export interface GtfsStaticBundle {
   stopTimes: StopTimeClient[];
   shapes: ShapePoint[];
   segmentPaths: Record<string, { lat: number; lng: number }[]>;
-  linePaths: Record<string, { lat: number; lng: number }[]>;
+  linePaths: Record<string, string[]>;
 }
 
 export interface ShapePoint {

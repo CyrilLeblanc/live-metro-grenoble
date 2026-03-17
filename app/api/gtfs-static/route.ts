@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     loadJson<Record<string, string>[]>('stop_times.json'),
     loadJson<Record<string, { lat: string; lon: string; sequence: number }[]>>('shapes.json'),
     loadJson<Record<string, { lat: number; lng: number }[]>>('segment-paths.json'),
-    loadJson<Record<string, { lat: number; lng: number }[]>>('line-paths.json').catch(() => ({} as Record<string, { lat: number; lng: number }[]>)),
+    loadJson<Record<string, string[]>>('line-paths.json').catch(() => ({} as Record<string, string[]>)),
   ])
 
   const stops: Stop[] = rawStops.map((s) => ({

@@ -24,7 +24,7 @@ export function haversineDistance(lat1: number, lng1: number, lat2: number, lng2
 }
 
 export function makeSegmentKey(stopAId: string, stopBId: string): string {
-  return [stopAId, stopBId].sort().join('__').replace(/[^a-zA-Z0-9]/g, '-')
+  return `${stopAId}__${stopBId}`.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
 export interface AveragedGraph {

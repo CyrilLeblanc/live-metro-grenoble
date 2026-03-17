@@ -1,21 +1,19 @@
 /**
  * WayAssemblyPanel — Step 2 sidebar panel.
  *
- * Shows the selected trip header, the list of OSM relations for hover-preview
- * and selection, and (when a relation is active) a drag-to-reorder list of its
- * member ways. Also exposes the "Save line path" and Reset/Back controls.
- *
- * All state changes are propagated upward via callbacks so that AdminMap can
- * keep the Leaflet layer styles in sync.
+ * Shows a header, the list of OSM relations for hover-preview and selection,
+ * and (when a relation is active) a drag-to-reorder list of its member ways.
+ * Also exposes Reset and Back controls.
  */
 
 import { useState } from 'react'
-import type { OsmRelation, OsmWay, TripEntry, CutPoint } from '../types'
+import type { OsmRelation, OsmWay, CutPoint } from '../types'
 import type { LatLng } from '../../../lib/geo'
 import { hexColor } from '../lib/geo'
 
 interface Props {
-  selectedTrip: TripEntry
+  /** Display label and accent colour for the current segment being assembled. */
+  header: { title: string; color: string }
   osmRelations: OsmRelation[]
   osmWays: OsmWay[]
   activeRelationId: number | null
@@ -24,23 +22,19 @@ interface Props {
   hoveredWayId: number | null
   assembledPolyline: LatLng[]
   cutPoints: CutPoint[]
-  /** Called when the user hovers a relation row (null = leave). */
   onRelationHover: (id: number | null) => void
-  /** Called when the user clicks a relation row to toggle it on/off. */
   onRelationToggle: (id: number | null, wayIds?: number[]) => void
-  /** Called when the user hovers a way row (null = leave). */
   onWayHover: (id: number | null) => void
-  /** Called when the user drags a way from one position to another. */
   onWayReorder: (fromIdx: number, toIdx: number) => void
-  /** Called when the user removes a way from the active relation list. */
   onWayRemove: (idx: number) => void
-  onSaveLinePath: () => void
+  /** When provided, shows a "Save line path" button. */
+  onSaveLinePath?: () => void
   onReset: () => void
   onBack: () => void
 }
 
 export default function WayAssemblyPanel({
-  selectedTrip,
+  header,
   osmRelations,
   osmWays,
   activeRelationId,
@@ -58,17 +52,14 @@ export default function WayAssemblyPanel({
   onReset,
   onBack,
 }: Props) {
-  // dragWayIdx is purely local UI state — only affects the visual drag indicator
   const [dragWayIdx, setDragWayIdx] = useState<number | null>(null)
+  const accentColor = hexColor(header.color)
 
   return (
     <div>
-      {/* Trip header */}
-      <div style={{ fontWeight: 'bold', marginBottom: 6 }}>
-        <span style={{ color: hexColor(selectedTrip.route_color) }}>
-          Ligne {selectedTrip.route_short_name}
-        </span>
-        {' → '}{selectedTrip.trip_headsign}
+      {/* Header */}
+      <div style={{ fontWeight: 'bold', marginBottom: 6, color: accentColor }}>
+        {header.title}
       </div>
 
       {/* OSM relations — always visible so the operator can switch between them */}
@@ -84,11 +75,7 @@ export default function WayAssemblyPanel({
                 key={rel.id}
                 onMouseEnter={() => onRelationHover(rel.id)}
                 onMouseLeave={() => onRelationHover(null)}
-                onClick={() =>
-                  isActive
-                    ? onRelationToggle(null)
-                    : onRelationToggle(rel.id, rel.wayIds)
-                }
+                onClick={() => isActive ? onRelationToggle(null) : onRelationToggle(rel.id, rel.wayIds)}
                 style={{
                   padding: '4px 8px',
                   marginBottom: 2,
@@ -107,7 +94,7 @@ export default function WayAssemblyPanel({
         </div>
       )}
 
-      {/* Ordered way list — shown when a relation is active; supports drag-to-reorder */}
+      {/* Ordered way list — shown when a relation is active */}
       {activeRelationId !== null && activeRelationWayIds.length > 0 && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -171,12 +158,11 @@ export default function WayAssemblyPanel({
         </div>
       )}
 
-      {/* Save line path — available as soon as something is assembled */}
-      {assembledPolyline.length > 0 && (
+      {/* Save line path — only shown when callback is provided */}
+      {onSaveLinePath && assembledPolyline.length > 0 && (
         <button
           onClick={onSaveLinePath}
           style={{ background: '#1a6e3a', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 12, marginBottom: 8, display: 'block' }}
-          title={`Sauvegarde le tracé complet pour Ligne ${selectedTrip.route_short_name} direction ${selectedTrip.direction_id}`}
         >
           Sauvegarder tracé de ligne
         </button>

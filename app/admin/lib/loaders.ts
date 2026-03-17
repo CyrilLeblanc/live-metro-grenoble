@@ -40,6 +40,21 @@ export function getTripStops(tripId: string): TripStop[] {
   return sts.map((st) => stopByIdCache!.get(st.stop_id)).filter(Boolean) as TripStop[]
 }
 
+// ─── Tram stops ───────────────────────────────────────────────────────────────
+
+/**
+ * Returns only stops that appear in stop_times (i.e. served by tram routes).
+ * The GTFS bundle is already filtered to route_type=0, so stop_times only
+ * references tram stops. This excludes any orphan stops in stops.json.
+ */
+export async function loadTramStops(): Promise<TripStop[]> {
+  const { stops, stopTimes } = await fetchGtfsStatic()
+  const tramStopIds = new Set(stopTimes.map((st) => st.stop_id))
+  return stops
+    .filter((s) => tramStopIds.has(s.stop_id))
+    .map((s) => ({ stop_id: s.stop_id, stop_name: s.stop_name, stop_lat: s.stop_lat, stop_lon: s.stop_lon }))
+}
+
 // ─── Clusters ─────────────────────────────────────────────────────────────────
 
 /**
@@ -276,11 +291,24 @@ async function postGeodata(file: string, body: unknown): Promise<void> {
 /**
  * Loads the saved line-paths.json.
  * Key format: "routeShortName|directionId" (e.g. "A|0", "B|1").
+ * Values are ordered arrays of segment keys.
  * Returns an empty object if the file doesn't exist yet.
  */
-export async function loadLinePaths(): Promise<Record<string, LatLng[]>> {
+export async function loadLinePaths(): Promise<Record<string, string[]>> {
   try {
     const res = await fetch('/api/admin/geodata?file=line-paths')
+    if (res.ok) return await res.json()
+  } catch { /* ignore */ }
+  return {}
+}
+
+/**
+ * Loads the saved segment-paths.json.
+ * Returns an empty object if the file doesn't exist yet.
+ */
+export async function loadSegmentPaths(): Promise<Record<string, LatLng[]>> {
+  try {
+    const res = await fetch('/api/admin/geodata?file=segment-paths')
     if (res.ok) return await res.json()
   } catch { /* ignore */ }
   return {}
@@ -306,15 +334,29 @@ export async function saveSegments(newSegments: Record<string, LatLng[]>): Promi
 }
 
 /**
- * Saves the assembled polyline for one route direction to line-paths.json.
+ * Saves the segment-key sequence for one route direction to line-paths.json.
  * Key format: "routeShortName|directionId" (e.g. "A|0", "B|1").
  */
-export async function saveLinePath(key: string, polyline: LatLng[]): Promise<void> {
-  let existing: Record<string, LatLng[]> = {}
+export async function saveLinePath(key: string, segmentKeys: string[]): Promise<void> {
+  let existing: Record<string, string[]> = {}
   try {
     const res = await fetch('/api/admin/geodata?file=line-paths')
     if (res.ok) existing = await res.json()
   } catch { /* ignore */ }
 
-  await postGeodata('line-paths', { ...existing, [key]: polyline })
+  await postGeodata('line-paths', { ...existing, [key]: segmentKeys })
+}
+
+/**
+ * Deletes a segment from segment-paths.json by key.
+ */
+export async function deleteSegment(key: string): Promise<void> {
+  let existing: Record<string, LatLng[]> = {}
+  try {
+    const res = await fetch('/api/admin/geodata?file=segment-paths')
+    if (res.ok) existing = await res.json()
+  } catch { /* ignore */ }
+
+  delete existing[key]
+  await postGeodata('segment-paths', existing)
 }
