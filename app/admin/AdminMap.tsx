@@ -46,7 +46,7 @@ export default function AdminMap() {
 
   // Leaflet layer refs — kept for cleanup between renders
   const clusterMarkersRef = useRef<Map<string, L.Marker>>(new Map())
-  const stopDotsRef = useRef<L.CircleMarker[]>([])
+  const stopDotsRef = useRef<Map<string, L.CircleMarker>>(new Map())
   const wayLayersRef = useRef<Map<number, L.Polyline>>(new Map())
   const assembledLayerRef = useRef<L.Polyline | null>(null)
   const stopMarkersRef = useRef<L.CircleMarker[]>([])
@@ -133,6 +133,16 @@ export default function AdminMap() {
         .addTo(map)
         .bindTooltip(cluster.name, { permanent: false, direction: 'top' })
 
+      marker.on('mouseover', () => {
+        for (const sid of cluster.stopIds) {
+          stopDotsRef.current.get(sid)?.setStyle({ color: '#fff', fillColor: '#ffe066', fillOpacity: 1, radius: 6, weight: 2 })
+        }
+      })
+      marker.on('mouseout', () => {
+        for (const sid of cluster.stopIds) {
+          stopDotsRef.current.get(sid)?.setStyle({ color: 'rgba(255,255,255,0.4)', fillColor: 'rgba(255,255,255,0.6)', fillOpacity: 1, radius: 4, weight: 1 })
+        }
+      })
       marker.on('dragend', () => {
         const { lat, lng } = marker.getLatLng()
         setClusters((prev) => prev.map((c) => (c.id === cluster.id ? { ...c, lat, lng } : c)))
@@ -216,7 +226,7 @@ export default function AdminMap() {
     if (!L || !map) return
 
     stopDotsRef.current.forEach((m) => m.remove())
-    stopDotsRef.current = []
+    stopDotsRef.current.clear()
 
     if (mode !== 'clusters' || allStops.length === 0) return
 
@@ -229,10 +239,10 @@ export default function AdminMap() {
         weight: 1,
         interactive: false,
       }).addTo(map)
-      stopDotsRef.current.push(dot)
+      stopDotsRef.current.set(stop.stop_id, dot)
     }
 
-    return () => { stopDotsRef.current.forEach((m) => m.remove()); stopDotsRef.current = [] }
+    return () => { stopDotsRef.current.forEach((m) => m.remove()); stopDotsRef.current.clear() }
   }, [allStops, mode])
 
   // ── Effect: Rebuild assembled polyline when way selection changes ────────────
