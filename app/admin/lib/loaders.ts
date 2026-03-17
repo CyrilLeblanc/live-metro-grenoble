@@ -43,16 +43,12 @@ export function getTripStops(tripId: string): TripStop[] {
 // ─── Tram stops ───────────────────────────────────────────────────────────────
 
 /**
- * Returns only stops that appear in stop_times (i.e. served by tram routes).
- * The GTFS bundle is already filtered to route_type=0, so stop_times only
- * references tram stops. This excludes any orphan stops in stops.json.
+ * Returns tram stops from the GTFS bundle.
+ * stops.json is already filtered to tram-only stops by parse-gtfs.js.
  */
 export async function loadTramStops(): Promise<TripStop[]> {
-  const { stops, stopTimes } = await fetchGtfsStatic()
-  const tramStopIds = new Set(stopTimes.map((st) => st.stop_id))
-  return stops
-    .filter((s) => tramStopIds.has(s.stop_id))
-    .map((s) => ({ stop_id: s.stop_id, stop_name: s.stop_name, stop_lat: s.stop_lat, stop_lon: s.stop_lon }))
+  const { stops } = await fetchGtfsStatic()
+  return stops.map((s) => ({ stop_id: s.stop_id, stop_name: s.stop_name, stop_lat: s.stop_lat, stop_lon: s.stop_lon }))
 }
 
 // ─── Clusters ─────────────────────────────────────────────────────────────────

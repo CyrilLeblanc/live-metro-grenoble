@@ -164,7 +164,7 @@ async function main() {
 
     const tramRouteIds = new Set(routes.map(r => r.route_id));
 
-    // stops.txt → pick 4 fields
+    // stops.txt → parse all into memory (needed later for segment-path coordinate lookup)
     console.log('Parsing stops.txt...');
     const stopsText = zip.readAsText('stops.txt');
     const stops = parseCSV(stopsText).map(r => ({
@@ -174,7 +174,7 @@ async function main() {
       stop_lon: r.stop_lon,
       parent_station: r.parent_station ?? '',
     }));
-    writeJSON('stops.json', stops);
+    // stops.json is written later, filtered to tram-referenced stops only.
 
     // trips.txt → filter to tram route_ids
     console.log('Parsing trips.txt...');
@@ -221,6 +221,10 @@ async function main() {
     }
     writeJSON('stop_times.json', stopTimes);
 
+    // stops.json — now that we have tram stop_times, filter to tram-only stops
+    const tramStopIds = new Set(stopTimes.map(st => st.stop_id));
+    writeJSON('stops.json', stops.filter(s => tramStopIds.has(s.stop_id)));
+
     // shapes.txt → group by shape_id, sort by sequence
     console.log('Parsing shapes.txt...');
     const shapesText = zip.readAsText('shapes.txt');
@@ -250,7 +254,7 @@ async function main() {
     console.log('Building segment paths...');
 
     function makeSegKey(a, b) {
-      return [a, b].sort().join('__').replace(/[^a-zA-Z0-9]/g, '-');
+      return `${a}__${b}`.replace(/[^a-zA-Z0-9]/g, '-');
     }
 
     function extractSegPath(shape, stopALat, stopALon, stopBLat, stopBLon) {
