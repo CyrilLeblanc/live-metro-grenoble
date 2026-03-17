@@ -504,6 +504,18 @@ export default function AdminMap() {
     setCutPoints(cuts)
   }
 
+  function autoCenterClusters() {
+    const stopById = new Map(allStops.map((s) => [s.stop_id, s]))
+    clustersHistoryRef.current.push(clusters.map((c) => ({ ...c })))
+    setClusters((prev) => prev.map((cluster) => {
+      const members = cluster.stopIds.map((id) => stopById.get(id)).filter(Boolean) as typeof allStops
+      if (members.length === 0) return cluster
+      const lat = members.reduce((sum, s) => sum + s.stop_lat, 0) / members.length
+      const lng = members.reduce((sum, s) => sum + s.stop_lon, 0) / members.length
+      return { ...cluster, lat, lng }
+    }))
+  }
+
   // ── Persistence handlers ──────────────────────────────────────────────────────
 
   async function handleSaveClusters() {
@@ -566,10 +578,16 @@ export default function AdminMap() {
 
         {/* Clusters mode actions */}
         {mode === 'clusters' && (
-          <button onClick={handleSaveClusters}
-            style={{ background: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
-            Sauvegarder clusters
-          </button>
+          <>
+            <button onClick={autoCenterClusters}
+              style={{ background: '#2980b9', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
+              ⟳ Centrer sur arrêts
+            </button>
+            <button onClick={handleSaveClusters}
+              style={{ background: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
+              Sauvegarder clusters
+            </button>
+          </>
         )}
 
         {/* Segments step 2 action: advance to step 3 */}
