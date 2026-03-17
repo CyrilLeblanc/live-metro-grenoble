@@ -53,6 +53,7 @@ export default function AdminMap() {
   const cutMarkersRef = useRef<L.Marker[]>([])
   const snapMarkerRef = useRef<L.Marker | null>(null)
   const previewStopMarkersRef = useRef<L.CircleMarker[]>([])
+  const clustersHistoryRef = useRef<Cluster[][]>([])
 
   // ── Shared state ─────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>('clusters')
@@ -133,6 +134,9 @@ export default function AdminMap() {
         .addTo(map)
         .bindTooltip(cluster.name, { permanent: false, direction: 'top' })
 
+      marker.on('dragstart', () => {
+        clustersHistoryRef.current.push(clusters.map((c) => ({ ...c })))
+      })
       marker.on('mouseover', () => {
         for (const sid of cluster.stopIds) {
           stopDotsRef.current.get(sid)?.setStyle({ color: '#fff', fillColor: '#ffe066', fillOpacity: 1, radius: 6, weight: 2 })
@@ -397,6 +401,19 @@ export default function AdminMap() {
     return () => { map.off('mousemove', handleMouseMove); map.off('click', handleMapClick) }
   }, [handleMouseMove, handleMapClick])
 
+  // ── Effect: Ctrl+Z undo ───────────────────────────────────────────────────────
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && mode === 'clusters') {
+        e.preventDefault()
+        const prev = clustersHistoryRef.current.pop()
+        if (prev) setClusters(prev)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mode])
+
   // ── Effect: Remove snap marker when snapping is disabled ─────────────────────
   useEffect(() => {
     if (!snappingActive) {
@@ -413,6 +430,7 @@ export default function AdminMap() {
       const { stops, clusters: loaded } = await loadClusters()
       setAllStops(stops)
       setClusters(loaded)
+      clustersHistoryRef.current = []
       setStatus(`${loaded.length} clusters chargés`)
     } catch (e) {
       setStatus(`Erreur GTFS: ${e}`)
