@@ -331,7 +331,7 @@ export default function AdminMap() {
 
       L.tileLayer('/api/tiles/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 19,
+        maxZoom: 18,
       }).addTo(map)
 
       mapRef.current = map
