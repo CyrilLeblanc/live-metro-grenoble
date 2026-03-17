@@ -52,6 +52,7 @@ export default function AdminMap() {
   const stopMarkersRef = useRef<L.CircleMarker[]>([])
   const cutMarkersRef = useRef<L.Marker[]>([])
   const snapMarkerRef = useRef<L.Marker | null>(null)
+  const previewStopMarkersRef = useRef<L.CircleMarker[]>([])
 
   // ── Shared state ─────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>('clusters')
@@ -78,6 +79,7 @@ export default function AdminMap() {
   const [tripStops, setTripStops] = useState<TripStop[]>([])
   const [cutPoints, setCutPoints] = useState<CutPoint[]>([])
   const [snappingActive, setSnappingActive] = useState(false)
+  const [previewStops, setPreviewStops] = useState<TripStop[]>([])
   const [pendingCut, setPendingCut] = useState<PendingCut | null>(null)
   const [pendingStopId, setPendingStopId] = useState<string>('')
 
@@ -289,6 +291,32 @@ export default function AdminMap() {
     return () => { stopMarkersRef.current.forEach((m) => m.remove()); stopMarkersRef.current = [] }
   }, [tripStops, selectedTrip, mode])
 
+  // ── Effect: Render hover-preview stop markers (step 1 only) ─────────────────
+  useEffect(() => {
+    const L = leafletRef.current
+    const map = mapRef.current
+    if (!L || !map) return
+
+    previewStopMarkersRef.current.forEach((m) => m.remove())
+    previewStopMarkersRef.current = []
+
+    if (mode !== 'segments' || segStep !== 1 || previewStops.length === 0) return
+
+    for (const stop of previewStops) {
+      const m = L.circleMarker([stop.stop_lat, stop.stop_lon], {
+        radius: 7,
+        color: '#fff',
+        fillColor: '#4a90d9',
+        fillOpacity: 1,
+        weight: 2,
+        interactive: false,
+      }).addTo(map).bindTooltip(stop.stop_name, { direction: 'top' })
+      previewStopMarkersRef.current.push(m)
+    }
+
+    return () => { previewStopMarkersRef.current.forEach((m) => m.remove()); previewStopMarkersRef.current = [] }
+  }, [previewStops, mode, segStep])
+
   // ── Effect: Render cut point markers ────────────────────────────────────────
   useEffect(() => {
     const L = leafletRef.current
@@ -407,7 +435,12 @@ export default function AdminMap() {
 
   // ── Trip selection ────────────────────────────────────────────────────────────
 
+  function handleTripHover(entry: TripEntry | null) {
+    setPreviewStops(entry ? getTripStops(entry.trip_id) : [])
+  }
+
   function selectTrip(entry: TripEntry) {
+    setPreviewStops([])
     setSelectedTrip(entry)
     setSegStep(2)
     setSelectedWayIds(new Set())
@@ -549,7 +582,7 @@ export default function AdminMap() {
           )}
 
           {mode === 'segments' && segStep === 1 && (
-            <TripSelector tripEntries={tripEntries} onSelect={selectTrip} />
+            <TripSelector tripEntries={tripEntries} onSelect={selectTrip} onHover={handleTripHover} />
           )}
 
           {mode === 'segments' && segStep === 2 && selectedTrip && (

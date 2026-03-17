@@ -11,9 +11,10 @@ import { hexColor } from '../lib/geo'
 interface Props {
   tripEntries: TripEntry[]
   onSelect: (entry: TripEntry) => void
+  onHover?: (entry: TripEntry | null) => void
 }
 
-export default function TripSelector({ tripEntries, onSelect }: Props) {
+export default function TripSelector({ tripEntries, onSelect, onHover }: Props) {
   // Group trips by line name and sort groups alphabetically
   const grouped = tripEntries.reduce<Map<string, TripEntry[]>>((acc, t) => {
     if (!acc.has(t.route_short_name)) acc.set(t.route_short_name, [])
@@ -36,8 +37,8 @@ export default function TripSelector({ tripEntries, onSelect }: Props) {
                 key={e.key}
                 onClick={() => onSelect(e)}
                 style={{ padding: '5px 8px', cursor: 'pointer', borderRadius: 4, marginBottom: 3, background: '#1e2d50' }}
-                onMouseEnter={(ev) => (ev.currentTarget.style.background = '#2a3f6f')}
-                onMouseLeave={(ev) => (ev.currentTarget.style.background = '#1e2d50')}
+                onMouseEnter={(ev) => { ev.currentTarget.style.background = '#2a3f6f'; onHover?.(e) }}
+                onMouseLeave={(ev) => { ev.currentTarget.style.background = '#1e2d50'; onHover?.(null) }}
               >
                 <span style={{ color: '#aaa', fontSize: 11 }}>Sens {e.direction_id} → </span>
                 <span>{e.trip_headsign || '(sans terminus)'}</span>
