@@ -36,6 +36,11 @@ import CutPointPanel from './components/CutPointPanel'
 type Mode = 'clusters' | 'segments'
 type SegStep = 1 | 2 | 3
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const STOP_DOT_STYLE = { color: 'rgba(255,255,255,0.4)', fillColor: 'rgba(255,255,255,0.6)', fillOpacity: 1, radius: 4, weight: 1 } as const
+const STOP_DOT_HIGHLIGHT_STYLE = { color: '#fff', fillColor: '#ffe066', fillOpacity: 1, radius: 6, weight: 2 } as const
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AdminMap() {
@@ -62,6 +67,9 @@ export default function AdminMap() {
   // ── Clusters state ───────────────────────────────────────────────────────────
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [allStops, setAllStops] = useState<TripStop[]>([])
+  // Derived once at load time — stopIds don't change at runtime, only positions do.
+  // Kept separate so dragging a cluster doesn't trigger stop-dot re-creation.
+  const [clusterStopIdSet, setClusterStopIdSet] = useState<Set<string>>(new Set())
 
   // ── Segments state ───────────────────────────────────────────────────────────
   const [segStep, setSegStep] = useState<SegStep>(1)
@@ -78,9 +86,9 @@ export default function AdminMap() {
   const [selectedWayIds, setSelectedWayIds] = useState<Set<number>>(new Set())
   const [assembledPolyline, setAssembledPolyline] = useState<LatLng[]>([])
   const [tripStops, setTripStops] = useState<TripStop[]>([])
+  const [previewStops, setPreviewStops] = useState<TripStop[]>([])
   const [cutPoints, setCutPoints] = useState<CutPoint[]>([])
   const [snappingActive, setSnappingActive] = useState(false)
-  const [previewStops, setPreviewStops] = useState<TripStop[]>([])
   const [pendingCut, setPendingCut] = useState<PendingCut | null>(null)
   const [pendingStopId, setPendingStopId] = useState<string>('')
 
@@ -138,14 +146,10 @@ export default function AdminMap() {
         clustersHistoryRef.current.push(clusters.map((c) => ({ ...c })))
       })
       marker.on('mouseover', () => {
-        for (const sid of cluster.stopIds) {
-          stopDotsRef.current.get(sid)?.setStyle({ color: '#fff', fillColor: '#ffe066', fillOpacity: 1, radius: 6, weight: 2 })
-        }
+        for (const sid of cluster.stopIds) stopDotsRef.current.get(sid)?.setStyle(STOP_DOT_HIGHLIGHT_STYLE)
       })
       marker.on('mouseout', () => {
-        for (const sid of cluster.stopIds) {
-          stopDotsRef.current.get(sid)?.setStyle({ color: 'rgba(255,255,255,0.4)', fillColor: 'rgba(255,255,255,0.6)', fillOpacity: 1, radius: 4, weight: 1 })
-        }
+        for (const sid of cluster.stopIds) stopDotsRef.current.get(sid)?.setStyle(STOP_DOT_STYLE)
       })
       marker.on('dragend', () => {
         const { lat, lng } = marker.getLatLng()
@@ -234,21 +238,13 @@ export default function AdminMap() {
 
     if (mode !== 'clusters' || allStops.length === 0) return
 
-    const clusterStopIds = new Set(clusters.flatMap((c) => c.stopIds))
-    for (const stop of allStops.filter((s) => clusterStopIds.has(s.stop_id))) {
-      const dot = L.circleMarker([stop.stop_lat, stop.stop_lon], {
-        radius: 4,
-        color: 'rgba(255,255,255,0.4)',
-        fillColor: 'rgba(255,255,255,0.6)',
-        fillOpacity: 1,
-        weight: 1,
-        interactive: false,
-      }).addTo(map)
+    for (const stop of allStops.filter((s) => clusterStopIdSet.has(s.stop_id))) {
+      const dot = L.circleMarker([stop.stop_lat, stop.stop_lon], { ...STOP_DOT_STYLE, interactive: false }).addTo(map)
       stopDotsRef.current.set(stop.stop_id, dot)
     }
 
     return () => { stopDotsRef.current.forEach((m) => m.remove()); stopDotsRef.current.clear() }
-  }, [allStops, clusters, mode])
+  }, [allStops, clusterStopIdSet, mode])
 
   // ── Effect: Rebuild assembled polyline when way selection changes ────────────
   // When activeRelationId is set, use the canonical OSM relation member order to
@@ -431,6 +427,7 @@ export default function AdminMap() {
       const { stops, clusters: loaded } = await loadClusters()
       setAllStops(stops)
       setClusters(loaded)
+      setClusterStopIdSet(new Set(loaded.flatMap((c) => c.stopIds)))
       clustersHistoryRef.current = []
       setStatus(`${loaded.length} clusters chargés`)
     } catch (e) {
@@ -460,6 +457,20 @@ export default function AdminMap() {
     } catch (e) {
       setStatus(`Erreur Overpass: ${e}`)
     }
+  }
+
+  // ── Cluster operations ────────────────────────────────────────────────────────
+
+  function autoCenterClusters() {
+    const stopById = new Map(allStops.map((s) => [s.stop_id, s]))
+    clustersHistoryRef.current.push(clusters.map((c) => ({ ...c })))
+    setClusters((prev) => prev.map((cluster) => {
+      const members = cluster.stopIds.map((id) => stopById.get(id)).filter(Boolean) as TripStop[]
+      if (members.length === 0) return cluster
+      const lat = members.reduce((sum, s) => sum + s.stop_lat, 0) / members.length
+      const lng = members.reduce((sum, s) => sum + s.stop_lon, 0) / members.length
+      return { ...cluster, lat, lng }
+    }))
   }
 
   // ── Trip selection ────────────────────────────────────────────────────────────
@@ -502,18 +513,6 @@ export default function AdminMap() {
       cuts.push({ latlng: proj.point, stopId: stop.stop_id, indexOnPolyline: proj.segIdx, tOnSegment: proj.t })
     }
     setCutPoints(cuts)
-  }
-
-  function autoCenterClusters() {
-    const stopById = new Map(allStops.map((s) => [s.stop_id, s]))
-    clustersHistoryRef.current.push(clusters.map((c) => ({ ...c })))
-    setClusters((prev) => prev.map((cluster) => {
-      const members = cluster.stopIds.map((id) => stopById.get(id)).filter(Boolean) as typeof allStops
-      if (members.length === 0) return cluster
-      const lat = members.reduce((sum, s) => sum + s.stop_lat, 0) / members.length
-      const lng = members.reduce((sum, s) => sum + s.stop_lon, 0) / members.length
-      return { ...cluster, lat, lng }
-    }))
   }
 
   // ── Persistence handlers ──────────────────────────────────────────────────────
