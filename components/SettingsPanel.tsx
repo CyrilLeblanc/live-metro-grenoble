@@ -179,7 +179,7 @@ export default function SettingsPanel({
             whiteSpace: 'nowrap',
           }}
         >
-          1 trajet contribué ✓
+          {lastContributedCount === 1 ? '1 trajet contribué ✓' : `${lastContributedCount} trajets contribués ✓`}
         </div>
       )}
     </>

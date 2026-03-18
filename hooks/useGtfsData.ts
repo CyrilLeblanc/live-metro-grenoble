@@ -17,6 +17,7 @@ import { makeSegmentKey, LatLng } from '../lib/geo'
 export interface GtfsData {
   lineShapes: Array<{ route: Route; points: ShapePoint[] }>
   tramStops: Array<{ stop: Stop; color: string }>
+  rawStops: Stop[]
   tramRouteIds: Set<string>
   routeColorMap: Map<string, string>
   segmentPaths: Map<string, LatLng[]>
@@ -27,6 +28,7 @@ export interface GtfsData {
 export function useGtfsData(): GtfsData {
   const [lineShapes, setLineShapes] = useState<Array<{ route: Route; points: ShapePoint[] }>>([])
   const [tramStops, setTramStops] = useState<Array<{ stop: Stop; color: string }>>([])
+  const [rawStops, setRawStops] = useState<Stop[]>([])
   const [tramRouteIds, setTramRouteIds] = useState<Set<string>>(new Set())
   const [routeColorMap, setRouteColorMap] = useState<Map<string, string>>(new Map())
   const [segmentPaths, setSegmentPaths] = useState<Map<string, LatLng[]>>(new Map())
@@ -116,6 +118,7 @@ export function useGtfsData(): GtfsData {
         })
       }
       setTramStops(tramClusters)
+      setRawStops(stops)
       setSegmentPaths(segPaths)
 
       // Build segmentStops: segmentKey → { stopAId, stopBId }
@@ -141,5 +144,5 @@ export function useGtfsData(): GtfsData {
     fetchAndTransformGtfs()
   }, [])
 
-  return { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded }
+  return { lineShapes, tramStops, rawStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded }
 }

@@ -91,7 +91,7 @@ export default function TramMap() {
   const { isDebug, frozenByPanel } = useDebugContext()
 
   // Load static GTFS data (routes, stops, shapes)
-  const { lineShapes, tramStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded } = useGtfsData()
+  const { lineShapes, tramStops, rawStops, tramRouteIds, routeColorMap, segmentPaths, segmentStops, dataLoaded } = useGtfsData()
 
   // Poll real-time tram positions every 10 seconds
   const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded, frozenByPanel)
@@ -139,7 +139,7 @@ export default function TramMap() {
     setEnabled: setPassiveEnabled,
     lastContributedCount,
     clearContributedCount,
-  } = usePassiveTracking(tramStops, segmentPaths, dataLoaded)
+  } = usePassiveTracking(rawStops, segmentPaths, dataLoaded)
 
   // User's own location (auto-prompted on load)
   const { position: userPosition, isPending: locationPending } = useUserLocation()
