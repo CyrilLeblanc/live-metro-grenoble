@@ -119,13 +119,6 @@ export default function AdminMap() {
     import('leaflet').then((L) => {
       leafletRef.current = L
 
-      delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      })
-
       const map = L.map(mapContainerRef.current!, {
         center: GRENOBLE_CENTER as [number, number],
         zoom: 13,
@@ -157,8 +150,16 @@ export default function AdminMap() {
     clusterMarkersRef.current.forEach((m) => m.remove())
     clusterMarkersRef.current.clear()
 
+    const zoom = map.getZoom()
+    const baseSize = Math.max(24, (zoom - 13) * 8 + 24)
+    const clusterIcon = L.icon({
+      iconUrl: '/p_clusters_dark.svg',
+      iconSize: [baseSize, baseSize],
+      iconAnchor: [baseSize / 2, baseSize / 2],
+    })
+
     for (const cluster of clusters) {
-      const marker = L.marker([cluster.lat, cluster.lng], { draggable: true })
+      const marker = L.marker([cluster.lat, cluster.lng], { draggable: true, icon: clusterIcon })
         .addTo(map)
         .bindTooltip(cluster.name, { permanent: false, direction: 'top' })
 
