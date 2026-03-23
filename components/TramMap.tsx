@@ -2,19 +2,19 @@
 
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, /* useMemo, */ useRef, useState } from 'react'
 import { MapContainer, Polyline, TileLayer, useMap, useMapEvents, useMapEvent } from 'react-leaflet'
-import { makeSegmentKey, TramMarkerData } from '../lib/geo'
+import { /* makeSegmentKey, */ TramMarkerData } from '../lib/geo'
 import { GRENOBLE_CENTER, GRENOBLE_BOUNDS, PANEL_BG, PANEL_BORDER, ACCENT_BLUE } from '../lib/config'
 import { useGtfsData } from '../hooks/useGtfsData'
 import { usePolling } from '../hooks/usePolling'
 import { useAnimatedTrams } from '../hooks/useAnimatedTrams'
-import { useUserOnTram } from '../hooks/useUserOnTram'
+// import { useUserOnTram } from '../hooks/useUserOnTram'
 import { useUserLocation } from '../hooks/useUserLocation'
 import StopDeparturePanel from './StopDeparturePanel'
 import StopMarker from './StopMarker'
 import CanvasTramLayer from './CanvasTramLayer'
-import OnTramOverlay from './OnTramOverlay'
+// import OnTramOverlay from './OnTramOverlay'
 import UserLocationMarker from './UserLocationMarker'
 import { Stop } from '../lib/gtfs'
 import { useDebugContext } from '../contexts/DebugContext'
@@ -22,7 +22,7 @@ import DebugSegmentLayer from './debug/DebugSegmentLayer'
 import DebugPlaybackLayer from './debug/DebugPlaybackLayer'
 import DebugPanel from './debug/DebugPanel'
 import TramPopup, { PopupTram } from './TramPopup'
-import { useFetchSegmentGraphs } from '../hooks/useFetchSegmentGraphs'
+// import { useFetchSegmentGraphs } from '../hooks/useFetchSegmentGraphs'
 
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   useMapEvents({ click: () => onMapClick() })
@@ -94,42 +94,42 @@ export default function TramMap() {
   // Poll real-time tram positions every 10 seconds
   const { apiTrams, tramMarkers, secondsLeft, refresh } = usePolling(dataLoaded, frozenByPanel)
 
-  // Segment graphs for animation refinement
-  const segmentKeys = useMemo(
-    () => [...new Set(apiTrams.map(t => makeSegmentKey(t.stopAId, t.stopBId)))],
-    [apiTrams],
-  )
-  const segmentGraphs = useFetchSegmentGraphs(segmentKeys)
+  // // Segment graphs for animation refinement (contributions disabled)
+  // const segmentKeys = useMemo(
+  //   () => [...new Set(apiTrams.map(t => makeSegmentKey(t.stopAId, t.stopBId)))],
+  //   [apiTrams],
+  // )
+  // const segmentGraphs = useFetchSegmentGraphs(segmentKeys)
 
-  // GPS user-on-tram tracking
-  // positionsRef is needed before useAnimatedTrams — use a stable ref that gets populated
-  const positionsPlaceholderRef = useRef<Map<string, import('../hooks/useAnimatedTrams').AnimatedPosition>>(new Map())
+  // // GPS user-on-tram tracking (disabled)
+  // // positionsRef is needed before useAnimatedTrams — use a stable ref that gets populated
+  // const positionsPlaceholderRef = useRef<Map<string, import('../hooks/useAnimatedTrams').AnimatedPosition>>(new Map())
 
-  const {
-    isTracking,
-    isConfirmed,
-    userTramId,
-    nearbyTrams,
-    currentSpeedMs,
-    gpsAccuracy,
-    startTracking,
-    stopTracking,
-    confirmTram,
-    cancelConfirmation,
-  } = useUserOnTram(apiTrams, positionsPlaceholderRef)
+  // const {
+  //   isTracking,
+  //   isConfirmed,
+  //   userTramId,
+  //   nearbyTrams,
+  //   currentSpeedMs,
+  //   gpsAccuracy,
+  //   startTracking,
+  //   stopTracking,
+  //   confirmTram,
+  //   cancelConfirmation,
+  // } = useUserOnTram(apiTrams, positionsPlaceholderRef)
 
-  // Build speed overrides: propagate the GPS user's speed to their confirmed tram
-  const speedOverrides = useMemo(() => {
-    if (!isConfirmed || !userTramId || currentSpeedMs === null) return undefined
-    return new Map([[userTramId, currentSpeedMs]])
-  }, [isConfirmed, userTramId, currentSpeedMs])
+  // // Build speed overrides: propagate the GPS user's speed to their confirmed tram (disabled)
+  // const speedOverrides = useMemo(() => {
+  //   if (!isConfirmed || !userTramId || currentSpeedMs === null) return undefined
+  //   return new Map([[userTramId, currentSpeedMs]])
+  // }, [isConfirmed, userTramId, currentSpeedMs])
 
-  const positionsRef = useAnimatedTrams(apiTrams, segmentPaths, segmentGraphs, speedOverrides, frozenByPanel)
+  const positionsRef = useAnimatedTrams(apiTrams, segmentPaths, undefined, undefined, frozenByPanel)
 
-  // Keep placeholder ref in sync so useUserOnTram gets real animated positions
-  useEffect(() => {
-    positionsPlaceholderRef.current = positionsRef.current ?? new Map()
-  })
+  // // Keep placeholder ref in sync so useUserOnTram gets real animated positions (disabled)
+  // useEffect(() => {
+  //   positionsPlaceholderRef.current = positionsRef.current ?? new Map()
+  // })
 
   // User's own location (auto-prompted on load)
   const { position: userPosition, isPending: locationPending } = useUserLocation()
@@ -227,6 +227,7 @@ export default function TramMap() {
           }}
         />
       )}
+      {/* OnTramOverlay disabled
       <OnTramOverlay
         isTracking={isTracking}
         isConfirmed={isConfirmed}
@@ -238,6 +239,7 @@ export default function TramMap() {
         onConfirm={confirmTram}
         onCancel={cancelConfirmation}
       />
+      */}
     </div>
   )
 }
