@@ -65,6 +65,42 @@ export function projectPointOnPolyline(
   return best
 }
 
+// ─── Polyline trimming ────────────────────────────────────────────────────────
+
+/**
+ * Trims `polyline` to the sub-path between the projections of `from` and `to`.
+ * The result always runs from→to regardless of which endpoint appears first
+ * along the raw polyline (reversing if necessary).
+ * Returns the original polyline unchanged if either stop cannot be projected.
+ */
+export function trimPolylineBetweenPoints(
+  polyline: LatLng[],
+  from: LatLng,
+  to: LatLng
+): LatLng[] {
+  if (polyline.length < 2) return polyline
+
+  const projFrom = projectPointOnPolyline(from, polyline)
+  const projTo   = projectPointOnPolyline(to,   polyline)
+  if (!projFrom || !projTo) return polyline
+
+  const posFrom = projFrom.segIdx + projFrom.t
+  const posTo   = projTo.segIdx   + projTo.t
+
+  const [startProj, endProj, reverse] =
+    posFrom <= posTo
+      ? [projFrom, projTo,   false]
+      : [projTo,   projFrom, true]
+
+  const result: LatLng[] = [startProj.point]
+  for (let i = startProj.segIdx + 1; i <= endProj.segIdx; i++) {
+    result.push(polyline[i])
+  }
+  result.push(endProj.point)
+
+  return reverse ? result.reverse() : result
+}
+
 // ─── Way joining ──────────────────────────────────────────────────────────────
 
 /** Returns the index of the first point in `polyline` within OVERLAP_SNAP_DEG of `p`, or -1. */

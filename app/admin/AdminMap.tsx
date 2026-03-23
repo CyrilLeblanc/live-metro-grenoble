@@ -1,20 +1,20 @@
 'use client'
 
 import 'leaflet/dist/leaflet.css'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type L from 'leaflet'
 import type { Cluster } from '../../lib/gtfs'
 import type { LatLng } from '../../lib/geo'
 import { makeSegmentKey } from '../../lib/geo'
 import { GRENOBLE_CENTER, GRENOBLE_BOUNDS } from '../../lib/config'
 
-import type { OsmWay, OsmRelation, TripEntry, TripStop, CutPoint, PendingCut } from './types'
+import type { OsmWay, OsmRelation, TripEntry, TripStop } from './types'
 import {
   assembleWays,
   assembleOrderedWays,
   sortWayIdsByProximity,
   projectPointOnPolyline,
-  buildSegmentPaths,
+  trimPolylineBetweenPoints,
 } from './lib/geo'
 import {
   loadClusters,
@@ -32,13 +32,12 @@ import {
 import ClustersPanel from './components/ClustersPanel'
 import SegmentStopPicker from './components/SegmentStopPicker'
 import WayAssemblyPanel from './components/WayAssemblyPanel'
-import CutPointPanel from './components/CutPointPanel'
 import LinesPanel from './components/LinesPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Mode = 'clusters' | 'segments' | 'lines'
-type SegStep = 1 | 2 | 3
+type SegStep = 1 | 2
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -57,11 +56,12 @@ export default function AdminMap() {
   const clusterMarkersRef = useRef<Map<string, L.Marker>>(new Map())
   const stopDotsRef = useRef<Map<string, L.CircleMarker>>(new Map())
   const wayLayersRef = useRef<Map<number, L.Polyline>>(new Map())
-  const assembledLayerRef = useRef<L.Polyline | null>(null)
   const stopMarkersRef = useRef<L.CircleMarker[]>([])
   const segStopMarkersRef = useRef<Map<string, L.CircleMarker>>(new Map())
-  const cutMarkersRef = useRef<L.Marker[]>([])
-  const snapMarkerRef = useRef<L.Marker | null>(null)
+  const nodeMarkersRef = useRef<L.Marker[]>([])
+  const editablePolylineRef = useRef<L.Polyline | null>(null)
+  const editablePointsRef = useRef<LatLng[]>([])
+  const nodeHistoryRef = useRef<LatLng[][]>([])
   const existingSegLayersRef = useRef<Map<string, L.Polyline>>(new Map())
   const segmentLayersRef = useRef<Map<string, L.Polyline>>(new Map())
   const linePreviewLayersRef = useRef<L.Polyline[]>([])
@@ -96,10 +96,6 @@ export default function AdminMap() {
   const [assembledPolyline, setAssembledPolyline] = useState<LatLng[]>([])
   // tripStops: the two confirmed stops for step 2/3 context markers
   const [tripStops, setTripStops] = useState<TripStop[]>([])
-  const [cutPoints, setCutPoints] = useState<CutPoint[]>([])
-  const [snappingActive, setSnappingActive] = useState(false)
-  const [pendingCut, setPendingCut] = useState<PendingCut | null>(null)
-  const [pendingStopId, setPendingStopId] = useState<string>('')
   const [hoveredStopId, setHoveredStopId] = useState<string | null>(null)
   const [hoveredSegmentKey, setHoveredSegmentKey] = useState<string | null>(null)
 
@@ -266,31 +262,109 @@ export default function AdminMap() {
 
   // ── Effect: Rebuild assembled polyline when way selection changes ────────────
   useEffect(() => {
-    if (activeRelationId !== null && activeRelationWayIds.length > 0) {
-      setAssembledPolyline(assembleOrderedWays(osmWays, activeRelationWayIds))
-      return
-    }
-    setAssembledPolyline(assembleWays(osmWays.filter((w) => selectedWayIds.has(w.id))))
-  }, [selectedWayIds, osmWays, activeRelationId, activeRelationWayIds])
+    const raw =
+      activeRelationId !== null && activeRelationWayIds.length > 0
+        ? assembleOrderedWays(osmWays, activeRelationWayIds)
+        : assembleWays(osmWays.filter((w) => selectedWayIds.has(w.id)))
 
-  // ── Effect: Render assembled polyline layer ──────────────────────────────────
+    if (raw.length >= 2 && fromStop && toStop) {
+      setAssembledPolyline(
+        trimPolylineBetweenPoints(
+          raw,
+          { lat: fromStop.stop_lat, lng: fromStop.stop_lon },
+          { lat: toStop.stop_lat,   lng: toStop.stop_lon }
+        )
+      )
+    } else {
+      setAssembledPolyline(raw)
+    }
+  }, [selectedWayIds, osmWays, activeRelationId, activeRelationWayIds, fromStop, toStop])
+
+  // ── Effect: Render draggable node markers when assembly changes (step 2) ──────
   useEffect(() => {
     const L = leafletRef.current
     const map = mapRef.current
     if (!L || !map) return
 
-    assembledLayerRef.current?.remove()
-    assembledLayerRef.current = null
+    nodeMarkersRef.current.forEach((m) => m.remove())
+    nodeMarkersRef.current = []
+    editablePolylineRef.current?.remove()
+    editablePolylineRef.current = null
+    nodeHistoryRef.current = []
 
-    if (assembledPolyline.length > 1 && (segStep === 2 || segStep === 3)) {
-      assembledLayerRef.current = L.polyline(
-        assembledPolyline.map((p) => [p.lat, p.lng] as [number, number]),
-        { color: '#0074d9', weight: 4, opacity: 0.8 }
-      ).addTo(map)
+    if (assembledPolyline.length < 2 || segStep !== 2) return
+
+    editablePointsRef.current = assembledPolyline.map((p) => ({ ...p }))
+
+    function rebuildNodes(pts: LatLng[]) {
+      nodeHistoryRef.current.push(editablePointsRef.current.map((p) => ({ ...p })))
+      editablePointsRef.current = pts
+      editablePolylineRef.current?.setLatLngs(pts.map((p) => [p.lat, p.lng] as [number, number]))
+      setAssembledPolyline([...pts])
     }
 
-    return () => { assembledLayerRef.current?.remove() }
-  }, [assembledPolyline, segStep])
+    editablePolylineRef.current = L.polyline(
+      editablePointsRef.current.map((p) => [p.lat, p.lng] as [number, number]),
+      { color: '#0074d9', weight: 4, opacity: 0.9 }
+    ).addTo(map)
+
+    editablePolylineRef.current.on('click', (e: L.LeafletMouseEvent) => {
+      e.originalEvent?.stopPropagation()
+      const cursor = { lat: e.latlng.lat, lng: e.latlng.lng }
+      const proj = projectPointOnPolyline(cursor, editablePointsRef.current)
+      if (!proj) return
+      const next = [
+        ...editablePointsRef.current.slice(0, proj.segIdx + 1),
+        proj.point,
+        ...editablePointsRef.current.slice(proj.segIdx + 1),
+      ]
+      rebuildNodes(next)
+    })
+
+    const nodeIcon = L.divIcon({
+      className: '',
+      html: '<div style="width:10px;height:10px;background:#0074d9;border:2px solid #fff;border-radius:50%;margin:-5px 0 0 -5px;cursor:grab"></div>',
+      iconSize: [0, 0],
+    })
+
+    for (let i = 0; i < editablePointsRef.current.length; i++) {
+      const pt = editablePointsRef.current[i]
+      const marker = L.marker([pt.lat, pt.lng], { draggable: true, icon: nodeIcon, zIndexOffset: 1000 }).addTo(map)
+
+      marker.on('mouseover', () => {
+        const el = marker.getElement()?.querySelector('div') as HTMLElement | null
+        if (el) { el.style.width = '14px'; el.style.height = '14px'; el.style.margin = '-7px 0 0 -7px'; el.style.background = '#fff'; el.style.borderColor = '#0074d9' }
+      })
+      marker.on('mouseout', () => {
+        const el = marker.getElement()?.querySelector('div') as HTMLElement | null
+        if (el) { el.style.width = '10px'; el.style.height = '10px'; el.style.margin = '-5px 0 0 -5px'; el.style.background = '#0074d9'; el.style.borderColor = '#fff' }
+      })
+      marker.on('dragstart', () => {
+        nodeHistoryRef.current.push(editablePointsRef.current.map((p) => ({ ...p })))
+      })
+      marker.on('drag', () => {
+        const { lat, lng } = marker.getLatLng()
+        editablePointsRef.current[i] = { lat, lng }
+        editablePolylineRef.current?.setLatLngs(
+          editablePointsRef.current.map((p) => [p.lat, p.lng] as [number, number])
+        )
+      })
+      marker.on('contextmenu', (e) => {
+        e.originalEvent?.preventDefault()
+        const next = editablePointsRef.current.filter((_, j) => j !== i)
+        rebuildNodes(next)
+      })
+
+      nodeMarkersRef.current.push(marker)
+    }
+
+    return () => {
+      nodeMarkersRef.current.forEach((m) => m.remove())
+      nodeMarkersRef.current = []
+      editablePolylineRef.current?.remove()
+      editablePolylineRef.current = null
+    }
+  }, [assembledPolyline, segStep]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Effect: Render trip stop markers (steps 2 & 3) ──────────────────────────
   useEffect(() => {
@@ -415,30 +489,6 @@ export default function AdminMap() {
     }
   }, [fromStop, toStop, hoveredStopId])
 
-  // ── Effect: Render cut point markers ────────────────────────────────────────
-  useEffect(() => {
-    const L = leafletRef.current
-    const map = mapRef.current
-    if (!L || !map) return
-
-    cutMarkersRef.current.forEach((m) => m.remove())
-    cutMarkersRef.current = []
-
-    for (const cp of cutPoints) {
-      const stop = tripStops.find((s) => s.stop_id === cp.stopId)
-      const label = stop ? `✂ ${stop.stop_name}` : '✂'
-      const m = L.marker([cp.latlng.lat, cp.latlng.lng], {
-        icon: L.divIcon({
-          className: '',
-          html: `<div style="background:#e74c3c;color:#fff;padding:2px 5px;border-radius:3px;white-space:nowrap;font-size:11px">${label}</div>`,
-        }),
-      }).addTo(map)
-      cutMarkersRef.current.push(m)
-    }
-
-    return () => { cutMarkersRef.current.forEach((m) => m.remove()); cutMarkersRef.current = [] }
-  }, [cutPoints, tripStops])
-
   // ── Effect: Render line preview polylines on hover (Lines mode step 1) ────────
   useEffect(() => {
     const L = leafletRef.current
@@ -531,71 +581,27 @@ export default function AdminMap() {
     }
   }, [segmentSequence, highlightedSegmentKey])
 
-  // ── Effect: Attach / detach map event handlers when snapping changes ─────────
-  const handleMouseMove = useCallback(
-    (e: L.LeafletMouseEvent) => {
-      if (!snappingActive || assembledPolyline.length < 2) return
-      const result = projectPointOnPolyline({ lat: e.latlng.lat, lng: e.latlng.lng }, assembledPolyline)
-      if (!result) return
-      setPendingCut(result)
-
-      const L = leafletRef.current
-      const map = mapRef.current
-      if (!L || !map) return
-
-      if (!snapMarkerRef.current) {
-        snapMarkerRef.current = L.marker([result.point.lat, result.point.lng], {
-          icon: L.divIcon({
-            className: '',
-            html: '<div style="width:12px;height:12px;background:#e74c3c;border:2px solid #fff;border-radius:50%;margin:-6px 0 0 -6px"></div>',
-          }),
-          interactive: false,
-        }).addTo(map)
-      } else {
-        snapMarkerRef.current.setLatLng([result.point.lat, result.point.lng])
-      }
-    },
-    [snappingActive, assembledPolyline]
-  )
-
-  const handleMapClick = useCallback(
-    (_e: L.LeafletMouseEvent) => {
-      if (!snappingActive || !pendingCut) return
-      const usedStops = new Set(cutPoints.map((c) => c.stopId))
-      const firstFree = tripStops.find((s) => !usedStops.has(s.stop_id))
-      setPendingStopId(firstFree?.stop_id ?? '')
-    },
-    [snappingActive, pendingCut, cutPoints, tripStops]
-  )
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    map.on('mousemove', handleMouseMove)
-    map.on('click', handleMapClick)
-    return () => { map.off('mousemove', handleMouseMove); map.off('click', handleMapClick) }
-  }, [handleMouseMove, handleMapClick])
-
   // ── Effect: Ctrl+Z undo ───────────────────────────────────────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && mode === 'clusters') {
-        e.preventDefault()
-        const prev = clustersHistoryRef.current.pop()
-        if (prev) setClusters(prev)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (mode === 'clusters') {
+          e.preventDefault()
+          const prev = clustersHistoryRef.current.pop()
+          if (prev) setClusters(prev)
+        } else if (mode === 'segments' && segStep === 2) {
+          e.preventDefault()
+          const prev = nodeHistoryRef.current.pop()
+          if (prev) {
+            editablePointsRef.current = prev
+            setAssembledPolyline([...prev])
+          }
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [mode])
-
-  // ── Effect: Remove snap marker when snapping is disabled ─────────────────────
-  useEffect(() => {
-    if (!snappingActive) {
-      snapMarkerRef.current?.remove()
-      snapMarkerRef.current = null
-    }
-  }, [snappingActive])
+  }, [mode, segStep])
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
@@ -693,30 +699,6 @@ export default function AdminMap() {
     setActiveRelationId(null)
     setActiveRelationWayIds([])
     setAssembledPolyline([])
-    setCutPoints([])
-    setSnappingActive(false)
-  }
-
-  // ── Cut point operations ──────────────────────────────────────────────────────
-
-  function commitCutPoint() {
-    if (!pendingCut || !pendingStopId) return
-    setCutPoints((prev) => [
-      ...prev,
-      { latlng: pendingCut.point, stopId: pendingStopId, indexOnPolyline: pendingCut.segIdx, tOnSegment: pendingCut.t },
-    ])
-    setPendingStopId('')
-  }
-
-  function autoPlaceCutPoints() {
-    if (assembledPolyline.length < 2) return
-    const cuts: CutPoint[] = []
-    for (const stop of tripStops) {
-      const proj = projectPointOnPolyline({ lat: stop.stop_lat, lng: stop.stop_lon }, assembledPolyline)
-      if (!proj) continue
-      cuts.push({ latlng: proj.point, stopId: stop.stop_id, indexOnPolyline: proj.segIdx, tOnSegment: proj.t })
-    }
-    setCutPoints(cuts)
   }
 
   // ── Way assembly callbacks (passed to WayAssemblyPanel) ───────────────────────
@@ -753,7 +735,6 @@ export default function AdminMap() {
     setActiveRelationId(null)
     setActiveRelationWayIds([])
     setAssembledPolyline([])
-    setCutPoints([])
   }
 
   // ── Persistence handlers ──────────────────────────────────────────────────────
@@ -769,21 +750,16 @@ export default function AdminMap() {
   }
 
   async function handleSaveSegments() {
-    setStatus('Sauvegarde des segments…')
+    if (!fromStop || !toStop) return
+    const points = editablePointsRef.current
+    if (points.length < 2) return
+    setStatus('Sauvegarde du segment…')
     try {
-      let newSegments: Record<string, LatLng[]>
-      if (cutPoints.length >= 2) {
-        newSegments = buildSegmentPaths(assembledPolyline, cutPoints)
-      } else {
-        // Single segment: whole polyline from fromStop → toStop
-        newSegments = { [makeSegmentKey(fromStop!.stop_id, toStop!.stop_id)]: assembledPolyline }
-      }
-      await saveSegments(newSegments)
-      // Update local state
-      const newKeys = Object.keys(newSegments)
-      setExistingSegmentKeys((prev) => new Set([...prev, ...newKeys]))
-      setExistingSegmentPathsForMap((prev) => ({ ...prev, ...newSegments }))
-      setStatus(`${newKeys.length} segment(s) sauvegardé(s) ✓`)
+      const key = makeSegmentKey(fromStop.stop_id, toStop.stop_id)
+      await saveSegments({ [key]: points })
+      setExistingSegmentKeys((prev) => new Set([...prev, key]))
+      setExistingSegmentPathsForMap((prev) => ({ ...prev, [key]: points }))
+      setStatus('Segment sauvegardé ✓')
     } catch (e) {
       setStatus(`Erreur sauvegarde: ${e}`)
     }
@@ -829,10 +805,6 @@ export default function AdminMap() {
     })
   }
 
-  // ── Computed values ───────────────────────────────────────────────────────────
-
-  const segmentCount = cutPoints.length > 1 ? cutPoints.length - 1 : 0
-
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -872,30 +844,12 @@ export default function AdminMap() {
           </>
         )}
 
-        {/* Segments step 2 action: advance to step 3 */}
+        {/* Segments step 2 action: save */}
         {mode === 'segments' && segStep === 2 && assembledPolyline.length > 1 && (
-          <button onClick={() => setSegStep(3)}
-            style={{ background: '#8e44ad', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
-            Étape 3 — Découpage →
+          <button onClick={handleSaveSegments}
+            style={{ background: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
+            Sauvegarder segment
           </button>
-        )}
-
-        {/* Segments step 3 actions */}
-        {mode === 'segments' && segStep === 3 && (
-          <>
-            <button onClick={autoPlaceCutPoints}
-              style={{ background: '#2980b9', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
-              ⟳ Auto-placer depuis arrêts
-            </button>
-            <button onClick={() => setSnappingActive((v) => !v)}
-              style={{ background: snappingActive ? '#e74c3c' : '#555', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
-              {snappingActive ? '✂ Coupure active' : '✂ Activer coupure'}
-            </button>
-            <button onClick={handleSaveSegments}
-              style={{ background: '#27ae60', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 4, cursor: 'pointer' }}>
-              Sauvegarder segments ({segmentCount})
-            </button>
-          </>
         )}
 
         <span style={{ color: '#aaa', fontSize: 12 }}>{status}</span>
@@ -935,8 +889,6 @@ export default function AdminMap() {
               activeRelationWayIds={activeRelationWayIds}
               hoveredRelationId={hoveredRelationId}
               hoveredWayId={hoveredWayId}
-              assembledPolyline={assembledPolyline}
-              cutPoints={cutPoints}
               onRelationHover={setHoveredRelationId}
               onRelationToggle={handleRelationToggle}
               onWayHover={setHoveredWayId}
@@ -944,21 +896,6 @@ export default function AdminMap() {
               onWayRemove={handleWayRemove}
               onReset={handleWayReset}
               onBack={() => setSegStep(1)}
-            />
-          )}
-
-          {mode === 'segments' && segStep === 3 && fromStop && toStop && (
-            <CutPointPanel
-              header={{ title: `${fromStop.stop_name} → ${toStop.stop_name}`, color: '0074d9' }}
-              tripStops={tripStops}
-              cutPoints={cutPoints}
-              snappingActive={snappingActive}
-              pendingCut={pendingCut}
-              pendingStopId={pendingStopId}
-              onPendingStopChange={setPendingStopId}
-              onCommitCut={commitCutPoint}
-              onRemoveCut={(idx) => setCutPoints((prev) => prev.filter((_, i) => i !== idx))}
-              onBack={() => { setSegStep(2); setSnappingActive(false) }}
             />
           )}
 

@@ -207,7 +207,19 @@ export async function fetchOsmData(): Promise<OverpassData> {
 
   const bounds = GRENOBLE_BOUNDS as [[number, number], [number, number]]
   const bbox = `${bounds[0][0]},${bounds[0][1]},${bounds[1][0]},${bounds[1][1]}`
-  const q = `[out:json];(way[railway=tram](${bbox});relation[route=tram](${bbox}););out geom;`
+  // Fetch tram route relations and only their member ways that have railway=tram.
+  // Using way(r.rels)[railway=tram] explicitly excludes railway=razed (and any
+  // other non-tram tag) from relation members, even if they have relation geometry.
+  const q = [
+    '[out:json];',
+    `relation[route=tram](${bbox})->.rels;`,
+    '(',
+    `  way[railway=tram](${bbox});`,
+    '  way(r.rels)[railway=tram];',
+    ')->.ways;',
+    '(.rels; .ways;);',
+    'out geom;',
+  ].join('')
 
   const res = await fetch(`/api/admin/overpass?q=${encodeURIComponent(q)}`)
   if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`)
@@ -230,12 +242,6 @@ export async function fetchOsmData(): Promise<OverpassData> {
   const wayMap = new Map<number, OsmWay>()
   const relations: OsmRelation[] = []
 
-  // Track which way IDs are track ways (non-platform relation members).
-  // Top-level ways from the bbox query may include platform ways that share
-  // the railway=tram tag — we exclude them by only keeping ways that appear
-  // as track members in at least one relation.
-  const trackWayIds = new Set<number>()
-
   for (const el of (data.elements ?? []) as RawEl[]) {
     if (el.type === 'way' && (el.geometry?.length ?? 0) > 1) {
       wayMap.set(el.id, {
@@ -249,14 +255,6 @@ export async function fetchOsmData(): Promise<OverpassData> {
         // Skip platform and stop members — they are station infrastructure, not track
         if (member.role === 'platform' || member.role === 'stop') continue
         wayIds.push(member.ref)
-        trackWayIds.add(member.ref)
-        // Capture geometry from relation members not already present as direct ways
-        if (!wayMap.has(member.ref) && (member.geometry?.length ?? 0) > 1) {
-          wayMap.set(member.ref, {
-            id: member.ref,
-            coords: member.geometry!.map((n) => ({ lat: n.lat, lng: n.lon })),
-          })
-        }
       }
       if (wayIds.length > 0) {
         const ref = el.tags?.ref ?? ''
@@ -266,8 +264,8 @@ export async function fetchOsmData(): Promise<OverpassData> {
     }
   }
 
-  // Only keep ways that are actual track members of a relation (excludes platform ways)
-  const ways = [...wayMap.values()].filter((w) => w.coords.length > 1 && trackWayIds.has(w.id))
+  // All ways in wayMap come from way[railway=tram] queries, so no further filtering needed.
+  const ways = [...wayMap.values()]
   overpassCache = { ways, relations }
   return overpassCache
 }

@@ -7,8 +7,7 @@
  */
 
 import { useState } from 'react'
-import type { OsmRelation, OsmWay, CutPoint } from '../types'
-import type { LatLng } from '../../../lib/geo'
+import type { OsmRelation, OsmWay } from '../types'
 import { hexColor } from '../lib/geo'
 
 interface Props {
@@ -20,8 +19,6 @@ interface Props {
   activeRelationWayIds: number[]
   hoveredRelationId: number | null
   hoveredWayId: number | null
-  assembledPolyline: LatLng[]
-  cutPoints: CutPoint[]
   onRelationHover: (id: number | null) => void
   onRelationToggle: (id: number | null, wayIds?: number[]) => void
   onWayHover: (id: number | null) => void
@@ -41,8 +38,6 @@ export default function WayAssemblyPanel({
   activeRelationWayIds,
   hoveredRelationId,
   hoveredWayId,
-  assembledPolyline,
-  cutPoints,
   onRelationHover,
   onRelationToggle,
   onWayHover,
@@ -148,18 +143,8 @@ export default function WayAssemblyPanel({
         </div>
       )}
 
-      {/* Assembly stats */}
-      <div style={{ fontSize: 12, color: '#bbb', marginBottom: 6 }}>
-        {assembledPolyline.length} points assemblés
-      </div>
-      {cutPoints.length > 0 && (
-        <div style={{ fontSize: 12, color: '#2ecc71', marginBottom: 6 }}>
-          ✓ {cutPoints.length} point(s) de coupure conservés
-        </div>
-      )}
-
       {/* Save line path — only shown when callback is provided */}
-      {onSaveLinePath && assembledPolyline.length > 0 && (
+      {onSaveLinePath && (
         <button
           onClick={onSaveLinePath}
           style={{ background: '#1a6e3a', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 12, marginBottom: 8, display: 'block' }}
